@@ -7,7 +7,7 @@ class PoseEstimator:
         self.mp_pose = mp.solutions.pose
         self.pose = self.mp_pose.Pose(
             static_image_mode=False,
-            model_complexity=1,       # 0=Fast, 1=Balanced, 2=Accurate (Use 1 for Laptop, 0 for Pi)
+            model_complexity=0,       # 0=Fast, 1=Balanced, 2=Accurate (Use 1 for Laptop, 0 for Pi)
             smooth_landmarks=True,
             min_detection_confidence=0.5,
             min_tracking_confidence=0.5
