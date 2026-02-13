@@ -3,6 +3,7 @@ import time
 import os
 import json
 import winsound
+import math
 import numpy as np
 from collections import deque
 from datetime import datetime
@@ -10,191 +11,229 @@ from ultralytics import YOLO
 from tracking.deepsort_tracker import PersonTracker
 from pose.mediapipe_estimator import PoseEstimator
 
-# --- CHECKLIST CONFIGURATION ---
+# --- CONFIGURATION ---
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
 FPS_TARGET = 30
-BUFFER_SECONDS = 5    # Checklist[cite: 86]: 5 seconds BEFORE alert
-RECORD_SECONDS = 5    # Checklist[cite: 87]: 5 seconds AFTER alert
+SKIP_FRAMES = 3
 
-# Calculate buffer size (Frames = Seconds * FPS)
+# Evidence Settings
+BUFFER_SECONDS = 5
+RECORD_SECONDS = 5
 BUFFER_SIZE = BUFFER_SECONDS * FPS_TARGET
 
 # Logic Thresholds
 LUNGE_THRESHOLD = 1.15
 HANDS_THRESHOLD = 20
-THREAT_PERSISTENCE = 5  # Checklist[cite: 53]: Sustained threat validation
+FOLLOWING_DISTANCE_LIMIT = 200 # Pixels (Approx 1.5 meters)
+FOLLOWING_ANGLE_THRESHOLD = 0.8 # Cosine similarity (1.0 = identical direction)
 
-# --- SYSTEM INITIALIZATION ---
-print("Initializing Sentinel AI - Phase 5 (Evidence Mode)...")
+print("Initializing Sentinel AI - Phase 5 (With Stalking Detection)...")
+
+# --- MODULES ---
 detector = YOLO('yolo11n.pt') 
 tracker = PersonTracker(max_age=30)
 pose_estimator = PoseEstimator()
 
-# The "Time Machine" Buffer
+# Memory
 video_buffer = deque(maxlen=BUFFER_SIZE)
-
-# State Variables
 threat_history = {}    
 box_history = {}       
+track_history = {} # Stores (x,y) positions for path analysis
+following_history = {} # Stores how long A has followed B
+
 is_recording = False
 recording_frame_count = 0
 current_video_writer = None
 current_evidence_path = ""
 
-# Ensure Directory Structure 
+# Ensure Directory
 base_dir = "evidence/alerts"
-if not os.path.exists(base_dir):
-    os.makedirs(base_dir)
+if not os.path.exists(base_dir): os.makedirs(base_dir)
 
 cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 cap.set(cv2.CAP_PROP_FPS, FPS_TARGET)
 
-def start_evidence_recording(track_id, reason):
-    """
-    Triggers the recording process:
-    1. Creates the file structure
-    2. Dumps the past (buffer)
-    3. Sets state to record the future
-    """
+def start_evidence_recording(track_id, reason, score):
     global is_recording, current_video_writer, recording_frame_count, current_evidence_path
     
-    # Create Day-Specific Folder 
     today_str = datetime.now().strftime("%Y%m%d")
     save_dir = os.path.join(base_dir, today_str)
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+    if not os.path.exists(save_dir): os.makedirs(save_dir)
 
-    # Generate Filename
     timestamp = datetime.now().strftime("%H%M%S")
-    filename = f"ALERT_{timestamp}_ID{track_id}_{reason}.mp4"
+    filename = f"ALERT_{timestamp}_{reason}.mp4"
     current_evidence_path = os.path.join(save_dir, filename)
 
-    print(f"!!! STARTING RECORDING: {filename} !!!")
+    print(f"!!! RECORDING: {filename} !!!")
     
-    # Initialize Video Writer (mp4v codec)
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     current_video_writer = cv2.VideoWriter(current_evidence_path, fourcc, 20.0, (FRAME_WIDTH, FRAME_HEIGHT))
 
-    # 1. DUMP THE PAST (Write all frames currently in buffer)
     for past_frame in video_buffer:
         current_video_writer.write(past_frame)
 
-    # 2. PLAY ALARM 
+    meta_filename = current_evidence_path.replace(".mp4", ".json")
+    data = {
+        "timestamp": datetime.now().isoformat(),
+        "alert_type": reason,
+        "track_id": int(track_id),
+        "threat_score": score,
+        "camera_id": "CAM_01"
+    }
+    with open(meta_filename, "w") as f:
+        json.dump(data, f, indent=4)
+
     winsound.PlaySound("SystemHand", winsound.SND_ALIAS | winsound.SND_ASYNC)
     
     is_recording = True
     recording_frame_count = 0
 
-def save_metadata(track_id, reason, score):
-    """Saves the alert details to a JSON file """
-    meta_filename = current_evidence_path.replace(".mp4", ".json")
-    data = {
-        "timestamp": datetime.now().isoformat(),
-        "alert_type": reason,
-        "track_id": track_id,
-        "threat_score": score,
-        "camera_id": "CAM_01_MAIN",
-        "location": "Entrance Hall"
-    }
-    with open(meta_filename, "w") as f:
-        json.dump(data, f, indent=4)
-    print(f"Metadata saved: {meta_filename}")
+def calculate_direction_similarity(path_a, path_b):
+    """Returns 1.0 if moving same direction, -1.0 if opposite"""
+    if len(path_a) < 10 or len(path_b) < 10: return 0
+    
+    # Vector from 10 frames ago to now
+    vec_a = np.array([path_a[-1][0] - path_a[0][0], path_a[-1][1] - path_a[0][1]])
+    vec_b = np.array([path_b[-1][0] - path_b[0][0], path_b[-1][1] - path_b[0][1]])
+    
+    # Normalize
+    norm_a = np.linalg.norm(vec_a)
+    norm_b = np.linalg.norm(vec_b)
+    
+    if norm_a < 5 or norm_b < 5: return 0 # Not moving enough
+    
+    # Dot product / magnitude = Cosine Similarity
+    return np.dot(vec_a, vec_b) / (norm_a * norm_b)
 
 # --- MAIN LOOP ---
 frame_counter = 0
+current_draw_list = []
+
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret: break
-    
     frame_counter += 1
-    
-    # Always add current frame to buffer (RAM)
-    # If buffer is full, oldest frame is automatically removed
     video_buffer.append(frame.copy())
 
-    # Only run heavy AI every 3rd frame
-    if frame_counter % 3 == 0:
-        
-        # 1. DETECT
+    if frame_counter % SKIP_FRAMES == 0:
         results = detector(frame, classes=[0], verbose=False)
         detections = []
         for box in results[0].boxes.data.tolist():
             x1, y1, x2, y2, conf, cls = box
             detections.append([[x1, y1, x2-x1, y2-y1], conf, int(cls)])
 
-        # 2. TRACK
         tracks = tracker.update(detections, frame)
+        new_draw_list = []
+        
+        # Update Track History for Stalking Logic
+        active_ids = []
+        for track in tracks:
+            tid = track['id']
+            bbox = track['bbox']
+            center_x = int(bbox[0] + bbox[2]/2)
+            center_y = int(bbox[1] + bbox[3]/2)
+            
+            if tid not in track_history: track_history[tid] = deque(maxlen=30)
+            track_history[tid].append((center_x, center_y))
+            active_ids.append(tid)
 
+        # --- LOGIC LOOP ---
         for track in tracks:
             track_id = track['id']
             bbox = track['bbox']
             w, h = bbox[2], bbox[3]
             current_area = w * h
 
-            # --- LOGIC: LUNGE ---
             is_lunging = False
+            is_surrendering = False
+            is_following = False
+
+            # A. LUNGE
             if track_id not in box_history: box_history[track_id] = []
             box_history[track_id].append(current_area)
             if len(box_history[track_id]) > 10: box_history[track_id].pop(0)
-            
             if len(box_history[track_id]) >= 5:
-                if (current_area / box_history[track_id][0]) > LUNGE_THRESHOLD:
-                    is_lunging = True
+                if (current_area / box_history[track_id][0]) > LUNGE_THRESHOLD: is_lunging = True
 
-            # --- LOGIC: HANDS UP ---
+            # B. POSE
             landmarks = pose_estimator.estimate_pose(frame, bbox)
-            is_surrendering = False
             if landmarks:
-                l_wrist_y = landmarks[15]['y']
-                l_shoulder_y = landmarks[11]['y']
-                if l_wrist_y < (l_shoulder_y - HANDS_THRESHOLD):
-                    is_surrendering = True
+                if landmarks[15]['y'] < (landmarks[11]['y'] - HANDS_THRESHOLD): is_surrendering = True
+
+            # C. FOLLOWING (STALKING)
+            # Compare this track against all other active tracks
+            for other_id in active_ids:
+                if track_id == other_id: continue
+                
+                # 1. Check Distance
+                tx, ty = track_history[track_id][-1]
+                ox, oy = track_history[other_id][-1]
+                dist = math.sqrt((tx-ox)**2 + (ty-oy)**2)
+                
+                if dist < FOLLOWING_DISTANCE_LIMIT:
+                    # 2. Check Direction
+                    similarity = calculate_direction_similarity(track_history[track_id], track_history[other_id])
+                    
+                    if similarity > FOLLOWING_ANGLE_THRESHOLD:
+                        # 3. Persistence
+                        pair_key = tuple(sorted((track_id, other_id)))
+                        if pair_key not in following_history: following_history[pair_key] = 0
+                        following_history[pair_key] += 1
+                        
+                        # Trigger if following for ~2 seconds (checks)
+                        if following_history[pair_key] > 10:
+                            is_following = True
+                    else:
+                        # Reset if directions diverge
+                        pair_key = tuple(sorted((track_id, other_id)))
+                        if pair_key in following_history: following_history[pair_key] = 0
 
             # --- THREAT SCORING ---
-            is_threat = is_surrendering or is_lunging
+            status_text = f"ID:{track_id}"
+            color = (0, 255, 0)
+            
             if track_id not in threat_history: threat_history[track_id] = 0
             
-            if is_threat:
+            if is_lunging or is_surrendering or is_following:
                 threat_history[track_id] += 1
             else:
                 threat_history[track_id] = max(0, threat_history[track_id] - 1)
 
-            # --- TRIGGER ALERT ---
-            # If threat persists AND we are not already recording
-            if threat_history[track_id] > THREAT_PERSISTENCE and not is_recording:
-                reason = "SURRENDER" if is_surrendering else "LUNGE"
+            if threat_history[track_id] > 5:
+                color = (0, 0, 255)
+                reason = "UNKNOWN"
+                if is_surrendering: reason = "SURRENDER"
+                elif is_lunging: reason = "LUNGE"
+                elif is_following: reason = "STALKING"
                 
-                # Start the "Time Machine" Recording
-                start_evidence_recording(track_id, reason)
-                save_metadata(track_id, reason, 90) # Mock score 90
+                status_text = f"ID:{track_id} | {reason}"
                 
-                # Reset counter to prevent double triggers
-                threat_history[track_id] = 0
+                if not is_recording:
+                    start_evidence_recording(track_id, reason, 90)
+                    threat_history[track_id] = 0
 
-            # Draw Box
-            color = (0, 0, 255) if threat_history[track_id] > 5 else (0, 255, 0)
-            x1, y1, x2, y2 = map(int, bbox)
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            cv2.putText(frame, f"ID:{track_id}", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+            new_draw_list.append((bbox, color, status_text))
+        
+        current_draw_list = new_draw_list
 
-    # --- RECORDING LOGIC (The "Future" Part) ---
+    # --- DRAWING ---
+    for (bbox, color, text) in current_draw_list:
+        x1, y1, x2, y2 = map(int, bbox)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+        cv2.putText(frame, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
     if is_recording:
         current_video_writer.write(frame)
         recording_frame_count += 1
-        
-        # Overlay "REC" indicator
         cv2.circle(frame, (30, 30), 10, (0, 0, 255), -1) 
-        
-        # Stop after 5 seconds (approx 150 frames)
         if recording_frame_count > (FPS_TARGET * RECORD_SECONDS):
-            print("Recording Saved.")
             is_recording = False
             current_video_writer.release()
 
-    cv2.imshow("Sentinel AI - Phase 5", frame)
+    cv2.imshow("Sentinel AI - Phase 5 + Stalking", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'): break
 
 cap.release()
