@@ -142,7 +142,8 @@ while cap.isOpened():
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
     # Show FPS
-    fps = 1.0 / (time.time() - start_time)
+    elapsed = time.time() - start_time
+    fps = 1.0 / elapsed if elapsed > 0 else 30.0
     cv2.putText(frame, f"FPS: {int(fps)}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, YELLOW, 2)
 
     cv2.imshow("Sentinel AI - Phase 4 Logic", frame)
