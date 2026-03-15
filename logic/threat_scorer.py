@@ -1,59 +1,77 @@
 import numpy as np
+from collections import deque
+from pose.mediapipe_estimator import PoseEstimator
 
 class ThreatScorer:
     def __init__(self):
         # We keep a small history for each person to calculate speed/consistency
-        # Format: {track_id: {'positions': [], 'pose_history': []}}
+        # Format: {track_id: {'positions': deque, 'posture_history': deque, 'hip_positions': deque}}
         self.targets = {}
+        self.pose_estimator = PoseEstimator()
 
     def update(self, track_id, bbox, landmarks):
         """
         Analyze the person's behavior and return a Threat Score (0-100).
         """
         if track_id not in self.targets:
-            self.targets[track_id] = {'positions': [], 'state': 'neutral'}
+            self.targets[track_id] = {
+                'positions': deque(maxlen=30),
+                'posture_history': deque(maxlen=30),
+                'hip_positions': deque(maxlen=30),
+                'state': 'neutral'
+            }
 
         # 1. Update Position History (for speed calculation)
         center_x = bbox[0] + (bbox[2] / 2)
         center_y = bbox[1] + (bbox[3] / 2)
         self.targets[track_id]['positions'].append((center_x, center_y))
-        
-        # Keep only last 30 frames (1 second) of history
-        if len(self.targets[track_id]['positions']) > 30:
-            self.targets[track_id]['positions'].pop(0)
 
-        # --- THREAT CHECK 1: SURRENDER (Hands Raised) ---
-        is_surrendering = False
+        # 2. Detect Postures
+        postures = self.pose_estimator.detect_postures(landmarks) if landmarks else []
+        self.targets[track_id]['posture_history'].append(postures)
+
+        # 3. Update Hip Positions for velocity
         if landmarks:
-            # MediaPipe Indices: 11/12 (Shoulders), 15/16 (Wrists)
-            # Y-coordinate increases downwards (0 is top of screen)
-            l_shoulder_y = landmarks[11]['y']
-            r_shoulder_y = landmarks[12]['y']
-            l_wrist_y = landmarks[15]['y']
-            r_wrist_y = landmarks[16]['y']
+            avg_hip_x = (landmarks[23]['x'] + landmarks[24]['x']) / 2
+            avg_hip_y = (landmarks[23]['y'] + landmarks[24]['y']) / 2
+            self.targets[track_id]['hip_positions'].append((avg_hip_x, avg_hip_y))
 
-            # Check if Wrists are HIGHER (smaller y) than Shoulders
-            # We add a 20px buffer so it doesn't flicker
-            if l_wrist_y < (l_shoulder_y - 20) and r_wrist_y < (r_shoulder_y - 20):
-                is_surrendering = True
+        # 4. Calculate sustained postures
+        sustained_postures = []
+        history = self.targets[track_id]['posture_history']
+        for posture in ['CROUCHING', 'ARM_EXTENDED_FORWARD', 'REACHING_WAIST', 'LEANING_FORWARD', 'SURRENDER', 'RUNNING']:
+            count = sum(1 for p_list in history if posture in p_list)
+            if count > 20:
+                sustained_postures.append(posture)
 
-        # --- THREAT CHECK 2: AGGRESSIVE APPROACH (Lunge) ---
-        is_lunging = False
-        # We calculate how fast the bounding box is getting BIGGER (closer)
-        if len(self.targets[track_id]['positions']) > 5:
-            # Simple check: Is the person much closer now than 0.5s ago?
-            # (In a real deployment, we'd use Depth, but Box Area is a good proxy)
-            pass 
+        # 5. Calculate hip velocity for running
+        hip_velocity = 0
+        hip_pos = self.targets[track_id]['hip_positions']
+        if len(hip_pos) >= 2:
+            dx = hip_pos[-1][0] - hip_pos[-2][0]
+            dy = hip_pos[-1][1] - hip_pos[-2][1]
+            hip_velocity = np.sqrt(dx**2 + dy**2)
+
+        # For running, only count as sustained if high velocity
+        if 'RUNNING' in sustained_postures and hip_velocity < 0.005:  # threshold
+            sustained_postures.remove('RUNNING')
 
         # --- SCORING ---
         score = 0
-        reason = "Scanning..."
+        for p in sustained_postures:
+            if p == 'CROUCHING':
+                score += 25
+            elif p == 'ARM_EXTENDED_FORWARD':
+                score += 30
+            elif p == 'REACHING_WAIST':
+                score += 20
+            elif p == 'LEANING_FORWARD':
+                score += 15
+            elif p == 'SURRENDER':
+                score += 40
+            elif p == 'RUNNING':
+                score += 20
 
-        if is_surrendering:
-            score = 90
-            reason = "** HANDS RAISED (SURRENDER) **"
-        elif is_lunging:
-            score = 70
-            reason = "AGGRESSIVE APPROACH"
-        
+        reason = ', '.join(sustained_postures) if sustained_postures else "Scanning..."
+
         return score, reason

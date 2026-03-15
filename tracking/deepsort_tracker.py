@@ -1,7 +1,7 @@
 from deep_sort_realtime.deepsort_tracker import DeepSort
 
 class PersonTracker:
-    def __init__(self, max_age=30, n_init=3):
+    def __init__(self, max_age=50, n_init=2):
         """
         Initialize DeepSORT tracker.
         """
@@ -9,8 +9,10 @@ class PersonTracker:
             max_age=max_age,
             n_init=n_init,
             nms_max_overlap=1.0,
-            max_cosine_distance=0.2,
+            max_cosine_distance=0.3,
+            max_iou_distance=0.7,
             embedder="mobilenet", # Lightweight for Pi
+            nn_budget=100,
         )
 
     def update(self, detections, frame):
