@@ -11,3 +11,6 @@ __pycache__/
 
 # Generated evidence data
 evidence/
+
+# Database files
+*.db
