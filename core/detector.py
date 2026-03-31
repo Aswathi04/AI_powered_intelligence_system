@@ -483,6 +483,12 @@ class Detector:
                 else:
                     color = (0, 0, 255)
                     current_alerts.append("PROXIMITY")
+
+                    # Add distance-based threat contribution to both people
+                    proximity_contribution = int((1.0 - dist / prox_limit) * 40)
+                    p1["threat_score"] = min(100, p1["threat_score"] + proximity_contribution)
+                    p2["threat_score"] = min(100, p2["threat_score"] + proximity_contribution)
+
                     cv2.line(frame, p1['center'], p2['center'], color, 4)
                     cv2.circle(frame, p1['center'], 10, color, -1)
                     cv2.circle(frame, p2['center'], 10, color, -1)
@@ -504,6 +510,18 @@ class Detector:
                         current_alerts.append("LOITERING")
                         self._loitering_alerted[key] = True
                         elapsed = time.time() - self._proximity_timers[key]
+
+                        # Determine which person is stationary (moved less)
+                        prev_p1 = self._pos_history.get(p1['id'], p1['center'])
+                        prev_p2 = self._pos_history.get(p2['id'], p2['center'])
+                        move_p1 = math.sqrt((p1['center'][0] - prev_p1[0])**2 + (p1['center'][1] - prev_p1[1])**2)
+                        move_p2 = math.sqrt((p2['center'][0] - prev_p2[0])**2 + (p2['center'][1] - prev_p2[1])**2)
+
+                        # Add score to the loiterer based on duration (scales: 0-40 points over 0-30s)
+                        loiterer = p1 if move_p1 < move_p2 else p2
+                        loiter_contribution = int(min(elapsed / 30, 1.0) * 40)
+                        loiterer["threat_score"] = min(100, loiterer["threat_score"] + loiter_contribution)
+
                         cooldown_key = f"loiter_{min(p1['id'], p2['id'])}_{max(p1['id'], p2['id'])}"
                         if time.time() - self._alert_cooldown.get(cooldown_key, 0) > 20:
                             self._trigger_incident(
@@ -562,6 +580,10 @@ class Detector:
                                 p2['role'] = "TARGET"
                                 cooldown_key = f"tail_{p1['id']}_{p2['id']}"
                                 if time.time() - self._alert_cooldown.get(cooldown_key, 0) > 30:
+                                    # Add score contribution to follower (p1 is the ATTACKER/follower)
+                                    tailgate_contribution = 40
+                                    p1["threat_score"] = min(100, p1["threat_score"] + tailgate_contribution)
+
                                     self._trigger_incident(
                                         frame, "TAILGATING",
                                         {"follower_id": int(p1['id']), "target_id": int(p2['id']), "follow_duration_s": 30},
@@ -609,6 +631,22 @@ class Detector:
                 current_alerts.append("ENCIRCLEMENT")
                 if time.time() - self._alert_cooldown.get(
                         "circle", 0) > 10:
+                    # Add score contributions based on enclosed_pct
+                    # Large contribution to the enclosed person (target)
+                    enclosed_score_contribution = int((debug_enclosed / 100.0) * 50)
+                    best_target["threat_score"] = min(100, best_target["threat_score"] + enclosed_score_contribution)
+
+                    # Find encirclers and add smaller contributions
+                    encircler_score_contribution = int((debug_enclosed / 100.0) * 20)
+                    for other in current_people:
+                        if other['id'] == best_target['id']:
+                            continue
+                        dist_to_target = math.sqrt(
+                            (other['center'][0] - best_target['center'][0])**2 +
+                            (other['center'][1] - best_target['center'][1])**2)
+                        if dist_to_target < encircle_dist:
+                            other["threat_score"] = min(100, other["threat_score"] + encircler_score_contribution)
+
                     self._trigger_incident(
                         frame, "ENCIRCLEMENT",
                         {"max_gap_deg":  int(min_max_gap),

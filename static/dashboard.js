@@ -37,28 +37,105 @@ function updateStatus(data) {
 
 /* ── Metrics ── */
 function updateMetrics(data) {
+  const score = data.threat_score || 0;
+
+  // Update threat gauge visualization
+  updateThreatGauge(score);
+
+  // Update metric values
   _set('m-people',   data.people || 0);
   _set('m-dist',     data.min_dist && data.min_dist < 999 ? data.min_dist + ' px' : '—');
   _set('m-encircle', (data.encircle_pct || 0) + '%');
 
-  const scoreEl = document.getElementById('m-score');
-  if (scoreEl) {
-    const score = data.threat_score || 0;
-    scoreEl.textContent = score + '/100';
-    scoreEl.style.color =
-      score > 70 ? 'var(--danger)' :
-      score > 40 ? 'var(--warning)' : 'inherit';
-    scoreEl.style.fontWeight = score > 40 ? 'bold' : 'normal';
-  }
+  // Color-code metric cards based on threat level
+  const threatLevel = score > 70 ? 'high' : score > 40 ? 'med' : 'low';
+  const cards = ['metric-people-card', 'metric-dist-card', 'metric-encircle-card'];
+  cards.forEach(cardId => {
+    const card = document.getElementById(cardId);
+    if (card) {
+      // Remove old threat class
+      card.classList.remove('threat-low', 'threat-med', 'threat-high');
+      // Add new threat class
+      card.classList.add(`threat-${threatLevel}`);
+    }
+  });
 
   _set('fps-badge', (data.fps || '--') + ' FPS');
 }
 
-/* ── Live log ── */
+/* ── Threat Gauge Animation ── */
+function updateThreatGauge(score) {
+  const arc = document.getElementById('gauge-arc');
+  const scoreDisplay = document.getElementById('threat-score-val');
+  if (!arc || !scoreDisplay) return;
+
+  // SVG circle circumference ≈ 345.57 (for radius 55)
+  const circumference = 345.57;
+  const progress = (Math.min(score, 100) / 100) * circumference;
+  arc.style.strokeDasharray = `${progress} ${circumference}`;
+
+  // Update score display and color
+  scoreDisplay.textContent = score;
+  const threatLevel = score > 70 ? 'high' : score > 40 ? 'med' : 'low';
+  scoreDisplay.className = `threat-score-display ${threatLevel}`;
+
+  // Update arc color
+  const color = score > 70 ? 'var(--danger)' : score > 40 ? 'var(--warning)' : 'var(--success)';
+  arc.style.stroke = color;
+}
+
+/* ── Live log with structured events ── */
 function updateLog(lines) {
   const el = document.getElementById('live-log');
-  if (!el || !lines.length) return;
-  el.textContent = lines.join('\n');
+  if (!el) return;
+
+  // If no events, show placeholder
+  if (!lines || !lines.length) {
+    el.innerHTML = '<li class="event-item muted" style="justify-content: center;">Waiting for events...</li>';
+    return;
+  }
+
+  // Parse and render events
+  let html = '';
+  lines.slice(-10).reverse().forEach(line => {  // Show last 10, most recent first
+    const event = parseEventLog(line);
+    html += renderEventItem(event);
+  });
+  el.innerHTML = html;
+}
+
+/* ── Parse event log line ── */
+function parseEventLog(line) {
+  // Example line: "PROXIMITY: 2 people, 145px"
+  // Extract type and message
+  const match = line.match(/^(\w+):\s*(.+)$/);
+  if (!match) return { type: 'INFO', message: line, icon: 'ℹ️' };
+
+  const [, type, message] = match;
+  const typeMap = {
+    'PROXIMITY': { icon: '⚠️', class: 'event-proximity' },
+    'SPEED': { icon: '🏃', class: 'event-speed' },
+    'ENCIRCLEMENT': { icon: '🔄', class: 'event-encircle' },
+    'LOITERING': { icon: '⏱️', class: 'event-loiter' },
+    'TAILGATING': { icon: '👥', class: 'event-tailgate' },
+  };
+  const typeInfo = typeMap[type] || { icon: 'ℹ️', class: 'event-info' };
+
+  return { type, message, ...typeInfo, timestamp: new Date().toLocaleTimeString() };
+}
+
+/* ── Render event item ── */
+function renderEventItem(event) {
+  return `
+    <li class="event-item">
+      <span class="event-icon">${event.icon}</span>
+      <div class="event-content">
+        <div class="event-type ${event.class}">${event.type}</div>
+        <div>${event.message}</div>
+        <div class="event-time">${event.timestamp}</div>
+      </div>
+    </li>
+  `;
 }
 
 /* ── Incident list ── */

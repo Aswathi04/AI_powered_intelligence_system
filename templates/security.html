@@ -20,28 +20,45 @@
   </div>
 
   <div class="metrics-panel">
-    <div class="panel-header">Active Threats</div>
+    <div class="panel-header">Threat Analysis</div>
 
-    <div class="metric-card">
+    <!-- Threat Gauge -->
+    <div class="threat-gauge-container">
+      <svg class="threat-gauge-svg" id="threat-gauge" viewBox="0 0 120 120">
+        <!-- Background circle -->
+        <circle cx="60" cy="60" r="55" fill="none" stroke="var(--bg3)" stroke-width="8"/>
+        <!-- Arc progress (animated) -->
+        <circle id="gauge-arc" cx="60" cy="60" r="55" fill="none" stroke="var(--success)"
+                stroke-width="8" stroke-dasharray="0 345.57" stroke-linecap="round"
+                transform="rotate(-90 60 60)" style="transition: stroke-dasharray 0.3s ease, stroke 0.3s ease;"/>
+        <!-- Center dot -->
+        <circle cx="60" cy="60" r="4" fill="var(--primary)"/>
+      </svg>
+      <span class="threat-label">Threat Level</span>
+      <span class="threat-score-display low" id="threat-score-val">0</span>
+    </div>
+
+    <!-- Metric Cards with color coding -->
+    <div class="metric-card threat-low" id="metric-people-card">
       <span class="metric-label">People in frame</span>
       <span class="metric-value" id="m-people">0</span>
     </div>
-    <div class="metric-card">
+    <div class="metric-card threat-low" id="metric-dist-card">
       <span class="metric-label">Min distance</span>
       <span class="metric-value" id="m-dist">—</span>
     </div>
-    <div class="metric-card">
+    <div class="metric-card threat-low" id="metric-encircle-card">
       <span class="metric-label">Encirclement</span>
       <span class="metric-value" id="m-encircle">0%</span>
     </div>
-    <div class="metric-card">
-      <span class="metric-label">Threat score</span>
-      <span class="metric-value" id="m-score">0</span>
-    </div>
 
     <hr/>
-    <div class="panel-header">Live Log</div>
-    <div class="live-log" id="live-log">Waiting for events...</div>
+    <div class="panel-header">Live Events</div>
+    <ul class="event-feed" id="live-log">
+      <li class="event-item muted" style="justify-content: center;">
+        Waiting for events...
+      </li>
+    </ul>
   </div>
 
 </div>

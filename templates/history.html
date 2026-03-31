@@ -2,111 +2,651 @@
 {% block title %}Incident History — Sentinel AI{% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <h1>Incident History</h1>
-  <div class="filter-bar">
-    <input type="date" id="from-date" placeholder="From">
-    <input type="date" id="to-date"   placeholder="To">
-    <select id="filter-status">
-      <option value="">All statuses</option>
-      <option value="PENDING">Pending</option>
-      <option value="CONFIRMED">Confirmed</option>
-      <option value="FALSE_ALARM">False alarm</option>
-    </select>
-    <select id="filter-type">
-      <option value="">All types</option>
-      <option value="PROXIMITY">Proximity</option>
-      <option value="SPEED CHANGE">Speed change</option>
-      <option value="ENCIRCLEMENT">Encirclement</option>
-      <option value="LOITERING">Loitering</option>
-      <option value="TAILGATING">Tailgating</option>
-    </select>
-    <button onclick="loadIncidents()">Filter</button>
-  </div>
-</div>
-
-<div id="evidence-modal" class="modal-backdrop" style="display:none"
-     onclick="closeModal(event)">
-  <div class="modal-card" onclick="event.stopPropagation()">
-    <div class="modal-header">
-      <span id="modal-title">Evidence</span>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <video id="evidence-video"
-             controls autoplay muted preload="metadata"
-             style="width:100%;border-radius:6px;background:#000;display:none">
-        Your browser does not support video playback.
-      </video>
-      <img id="evidence-thumb"
-           style="width:100%;border-radius:6px;display:none"
-           alt="Incident thumbnail">
-      <div id="evidence-meta" class="meta-grid"></div>
-    </div>
-    {% if user.role == 'security' or user.role == 'administrator' %}
-    <div class="modal-footer">
-      <input id="review-note" type="text" placeholder="Review note…" style="flex:1">
-      <button class="btn-confirm"
-              onclick="submitReview('CONFIRMED')">Confirm threat</button>
-      <button class="btn-dismiss"
-              onclick="submitReview('FALSE_ALARM')">False alarm</button>
-    </div>
-    {% endif %}
-  </div>
-</div>
-
-<div id="incident-grid" class="incident-grid">
-  <p class="loading-msg">Loading incidents…</p>
-</div>
-
 <style>
-/* (Your existing CSS from history.html stays exactly the same) */
-.page-header { padding: 1.5rem 2rem 0; }
-.page-header h1 { font-size: 1.4rem; font-weight: 500; margin: 0 0 1rem; }
-.filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1.5rem; }
-.filter-bar input, .filter-bar select { font-size: 13px; padding: 6px 10px; }
-.filter-bar button { padding: 6px 16px; font-size: 13px; cursor: pointer; }
-.incident-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; padding: 0 2rem 2rem; }
-.incident-card { border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); background: var(--color-background-primary); overflow: hidden; cursor: pointer; transition: border-color .15s; }
-.incident-card:hover { border-color: var(--color-border-primary); }
-.card-thumb { position: relative; width: 100%; aspect-ratio: 4/3; background: #111; overflow: hidden; }
-.card-thumb img { width: 100%; height: 100%; object-fit: cover; }
-.card-thumb .play-icon { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.35); font-size: 36px; color: #fff; opacity: 0; transition: opacity .15s; }
-.incident-card:hover .play-icon { opacity: 1; }
-.card-thumb .no-thumb { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #555; font-size: 13px; }
-.card-body { padding: 12px 14px; }
-.card-type { font-size: 11px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; display: inline-block; margin-bottom: 6px; }
-.type-PROXIMITY     { background:#fee2e2; color:#991b1b; }
-.type-SPEED_CHANGE  { background:#fef9c3; color:#854d0e; }
-.type-ENCIRCLEMENT  { background:#ede9fe; color:#4c1d95; }
-.type-OTHER         { background:#f3f4f6; color:#374151; }
-.card-id   { font-size: 13px; font-weight: 500; margin: 0 0 2px; }
-.card-meta { font-size: 12px; color: var(--color-text-secondary); }
-.card-footer { border-top: 0.5px solid var(--color-border-tertiary); padding: 8px 14px; display: flex; align-items: center; justify-content: space-between; }
-.score-badge { font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 4px; }
-.score-high   { background:#fee2e2; color:#991b1b; }
-.score-medium { background:#fef9c3; color:#854d0e; }
-.score-low    { background:#dcfce7; color:#14532d; }
-.status-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; }
-.status-PENDING     { background:#f3f4f6; color:#374151; }
-.status-CONFIRMED   { background:#fee2e2; color:#991b1b; }
-.status-FALSE_ALARM { background:#dcfce7; color:#14532d; }
-.modal-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; padding: 1rem; }
-.modal-card { background: var(--color-background-primary); border-radius: var(--border-radius-lg); border: 0.5px solid var(--color-border-secondary); width: 100%; max-width: 680px; display: flex; flex-direction: column; max-height: 90vh; overflow: hidden; }
-.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 0.5px solid var(--color-border-tertiary); font-weight: 500; font-size: 15px; }
-.modal-close { background: none; border: none; cursor: pointer; font-size: 16px; color: var(--color-text-secondary); padding: 2px 6px; }
-.modal-body { padding: 16px 18px; overflow-y: auto; }
-.modal-footer { padding: 12px 18px; border-top: 0.5px solid var(--color-border-tertiary); display: flex; gap: 8px; align-items: center; }
-.btn-confirm { padding: 7px 14px; font-size: 13px; cursor: pointer; background: #fee2e2; color: #991b1b; border: 0.5px solid #fca5a5; border-radius: 6px; }
-.btn-dismiss { padding: 7px 14px; font-size: 13px; cursor: pointer; background: #dcfce7; color: #14532d; border: 0.5px solid #86efac; border-radius: 6px; }
-.meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin-top: 14px; font-size: 13px; }
-.meta-item label { display: block; font-size: 11px; color: var(--color-text-secondary); margin-bottom: 2px; }
-.meta-item span { font-weight: 500; }
-.loading-msg { color: var(--color-text-secondary); padding: 2rem; }
+  /* ═══════════════════════════════════════════════════════════════
+     INCIDENT HISTORY & EVIDENCE REVIEW INTERFACE
+  ═════════════════════════════════════════════════════════════════ */
+
+  :root {
+    --color-bg-primary:     #0a0e27;
+    --color-bg-secondary:   #1a1f3a;
+    --color-bg-tertiary:    #232d4d;
+    --color-border:         #3a4563;
+    --color-text-primary:   #e8eef7;
+    --color-text-secondary: #a1aec9;
+    --color-accent-red:     #ef4444;
+    --color-accent-green:   #10b981;
+    --color-accent-amber:   #f59e0b;
+    --color-accent-blue:    #3b82f6;
+  }
+
+  .history-container {
+    display: flex;
+    gap: 0;
+    height: calc(100vh - 64px);
+    background: var(--color-bg-primary);
+  }
+
+  /* ─────────────────────────────────────────────────────────
+     LEFT SIDEBAR: FILTER & TIMELINE
+  ───────────────────────────────────────────────────────────── */
+
+  .timeline-sidebar {
+    width: 320px;
+    background: linear-gradient(180deg, #0f1429 0%, #1a1f3a 100%);
+    border-right: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: inset -2px 0 12px rgba(0, 0, 0, 0.3);
+  }
+
+  .sidebar-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .sidebar-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .filter-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .filter-group label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .filter-group input,
+  .filter-group select {
+    background: var(--color-bg-tertiary);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-primary);
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    font-size: 12px;
+    transition: all 0.2s ease;
+  }
+
+  .filter-group input:focus,
+  .filter-group select:focus {
+    outline: none;
+    border-color: var(--color-accent-blue);
+    background: rgba(59, 130, 246, 0.05);
+  }
+
+  .btn-filter {
+    padding: 0.6rem 1rem;
+    background: var(--color-accent-blue);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn-filter:hover {
+    background: #2563eb;
+  }
+
+  .btn-filter:active {
+    transform: scale(0.98);
+  }
+
+  .timeline-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+  }
+
+  .timeline-list::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .timeline-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .timeline-list::-webkit-scrollbar-thumb {
+    background: rgba(59, 130, 246, 0.3);
+    border-radius: 3px;
+  }
+
+  .timeline-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(59, 130, 246, 0.5);
+  }
+
+  .timeline-item {
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid var(--color-border);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border-left: 3px solid transparent;
+  }
+
+  .timeline-item:hover {
+    background: rgba(59, 130, 246, 0.08);
+    border-left-color: var(--color-accent-blue);
+  }
+
+  .timeline-item.active {
+    background: rgba(59, 130, 246, 0.12);
+    border-left-color: var(--color-accent-blue);
+  }
+
+  .timeline-item-type {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-accent-blue);
+    margin-bottom: 0.3rem;
+  }
+
+  .timeline-item-id {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin-bottom: 0.2rem;
+  }
+
+  .timeline-item-time {
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    margin-bottom: 0.4rem;
+  }
+
+  .timeline-item-score {
+    font-size: 11px;
+    font-weight: 600;
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 3px;
+  }
+
+  .timeline-item-score.high {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--color-accent-red);
+  }
+
+  .timeline-item-score.med {
+    background: rgba(245, 158, 11, 0.2);
+    color: var(--color-accent-amber);
+  }
+
+  .timeline-item-score.low {
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--color-accent-green);
+  }
+
+  .empty-state {
+    padding: 2rem 1rem;
+    text-align: center;
+    color: var(--color-text-secondary);
+  }
+
+  .empty-state-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.5;
+  }
+
+  .empty-state-text {
+    font-size: 12px;
+  }
+
+  /* ─────────────────────────────────────────────────────────
+     RIGHT PANEL: VIDEO PLAYER & METADATA
+  ───────────────────────────────────────────────────────────── */
+
+  .viewer-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-bg-primary);
+    padding: 1.5rem;
+    overflow-y: auto;
+  }
+
+  .viewer-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--color-text-secondary);
+    text-align: center;
+  }
+
+  .viewer-empty-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+  }
+
+  .viewer-content {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 1.5rem;
+    height: 100%;
+  }
+
+  /* Video section */
+  .video-section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .video-player {
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    flex: 1;
+    min-height: 300px;
+  }
+
+  .video-player video,
+  .video-player img {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .incident-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 0.5rem;
+  }
+
+  .incident-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .incident-id-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 0.3rem 0.7rem;
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--color-accent-blue);
+    border-radius: 4px;
+  }
+
+  /* Metadata sidebar */
+  .metadata-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    overflow-y: auto;
+  }
+
+  .metadata-card {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 1rem;
+  }
+
+  .metadata-card-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .metadata-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 12px;
+  }
+
+  .metadata-item:last-child {
+    border-bottom: none;
+  }
+
+  .metadata-label {
+    color: var(--color-text-secondary);
+    font-weight: 500;
+  }
+
+  .metadata-value {
+    color: var(--color-text-primary);
+    font-weight: 600;
+    text-align: right;
+  }
+
+  .status-badge {
+    display: inline-block;
+    padding: 0.4rem 0.8rem;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .status-PENDING {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--color-accent-amber);
+  }
+
+  .status-CONFIRMED {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--color-accent-red);
+  }
+
+  .status-FALSE_ALARM {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--color-accent-green);
+  }
+
+  /* Review section */
+  .review-section {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 1rem;
+  }
+
+  .review-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    margin-bottom: 0.75rem;
+  }
+
+  .review-input {
+    background: var(--color-bg-tertiary);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-primary);
+    padding: 0.6rem 0.8rem;
+    border-radius: 4px;
+    font-size: 12px;
+    width: 100%;
+    margin-bottom: 0.75rem;
+    transition: all 0.2s ease;
+  }
+
+  .review-input:focus {
+    outline: none;
+    border-color: var(--color-accent-blue);
+    background: rgba(59, 130, 246, 0.05);
+  }
+
+  .review-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .btn-review {
+    padding: 0.6rem 0.8rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn-confirm {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--color-accent-red);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
+  .btn-confirm:hover {
+    background: rgba(239, 68, 68, 0.3);
+  }
+
+  .btn-dismiss {
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--color-accent-green);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+  }
+
+  .btn-dismiss:hover {
+    background: rgba(16, 185, 129, 0.3);
+  }
+
+  /* Responsive */
+  @media (max-width: 1200px) {
+    .viewer-content {
+      grid-template-columns: 1fr;
+    }
+
+    .metadata-sidebar {
+      flex-direction: row;
+      max-height: 120px;
+      padding-bottom: 0.5rem;
+    }
+
+    .metadata-card {
+      flex: 1;
+      max-width: 200px;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .history-container {
+      flex-direction: column;
+      height: auto;
+    }
+
+    .timeline-sidebar {
+      width: 100%;
+      max-height: 200px;
+      border-right: none;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .timeline-list {
+      max-height: 120px;
+    }
+
+    .viewer-panel {
+      height: auto;
+      min-height: 400px;
+    }
+
+    .viewer-content {
+      grid-template-columns: 1fr;
+    }
+
+    .metadata-sidebar {
+      flex-direction: row;
+      height: auto;
+      max-height: none;
+    }
+  }
+
+  .loading-msg {
+    color: var(--color-text-secondary);
+    text-align: center;
+    padding: 1rem;
+  }
 </style>
 
+<div class="history-container">
+
+  <!-- ═══════════════════════════════════════════════════════════
+       LEFT: TIMELINE SIDEBAR
+  ═════════════════════════════════════════════════════════════ -->
+  <aside class="timeline-sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-title">
+        <span>📋</span>
+        <span>Incident Timeline</span>
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-group">
+          <label>From Date</label>
+          <input type="date" id="from-date">
+        </div>
+        <div class="filter-group">
+          <label>To Date</label>
+          <input type="date" id="to-date">
+        </div>
+        <div class="filter-group">
+          <label>Type</label>
+          <select id="filter-type">
+            <option value="">All types</option>
+            <option value="PROXIMITY">Proximity</option>
+            <option value="SPEED CHANGE">Speed Change</option>
+            <option value="ENCIRCLEMENT">Encirclement</option>
+            <option value="LOITERING">Loitering</option>
+            <option value="TAILGATING">Tailgating</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Status</label>
+          <select id="filter-status">
+            <option value="">All statuses</option>
+            <option value="PENDING">Pending</option>
+            <option value="CONFIRMED">Confirmed</option>
+            <option value="FALSE_ALARM">False alarm</option>
+          </select>
+        </div>
+        <button class="btn-filter" onclick="loadIncidents()">🔍 Filter</button>
+      </div>
+    </div>
+
+    <div class="timeline-list" id="timeline-list">
+      <div class="loading-msg">Loading incidents…</div>
+    </div>
+  </aside>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       RIGHT: VIEWER PANEL
+  ═════════════════════════════════════════════════════════════ -->
+  <main class="viewer-panel">
+    <div class="viewer-empty" id="viewer-empty">
+      <div>
+        <div class="viewer-empty-icon">🎬</div>
+        <p style="font-size: 14px;">Select an incident from the timeline to review evidence</p>
+      </div>
+    </div>
+
+    <div id="viewer-content" style="display: none;">
+      <div class="viewer-content">
+        <!-- Video player -->
+        <div class="video-section">
+          <div class="incident-header">
+            <div class="incident-title">
+              <span id="viewer-type">INCIDENT</span>
+              <span class="incident-id-badge" id="viewer-id">—</span>
+            </div>
+          </div>
+          <div class="video-player">
+            <video id="evidence-video" controls preload="metadata" style="display: none;"></video>
+            <img id="evidence-thumb" style="display: none;" alt="Incident thumbnail">
+          </div>
+        </div>
+
+        <!-- Metadata sidebar -->
+        <div class="metadata-sidebar">
+          <!-- Incident info -->
+          <div class="metadata-card">
+            <div class="metadata-card-title">⏱️ Incident Info</div>
+            <div class="metadata-item">
+              <span class="metadata-label">Timestamp</span>
+              <span class="metadata-value" id="meta-timestamp">—</span>
+            </div>
+            <div class="metadata-item">
+              <span class="metadata-label">Duration</span>
+              <span class="metadata-value" id="meta-duration">—</span>
+            </div>
+            <div class="metadata-item">
+              <span class="metadata-label">Pre-event</span>
+              <span class="metadata-value" id="meta-pre">—</span>
+            </div>
+            <div class="metadata-item">
+              <span class="metadata-label">Post-event</span>
+              <span class="metadata-value" id="meta-post">—</span>
+            </div>
+          </div>
+
+          <!-- Threat assessment -->
+          <div class="metadata-card">
+            <div class="metadata-card-title">🎯 Assessment</div>
+            <div class="metadata-item">
+              <span class="metadata-label">Threat Score</span>
+              <span class="metadata-value" id="meta-score" style="font-size: 14px;">—</span>
+            </div>
+            <div class="metadata-item">
+              <span class="metadata-label">Status</span>
+              <span class="metadata-value" id="meta-status">—</span>
+            </div>
+          </div>
+
+          <!-- Custom metrics -->
+          <div class="metadata-card" id="metrics-card" style="display: none;">
+            <div class="metadata-card-title">📊 Metrics</div>
+            <div id="metrics-list"></div>
+          </div>
+
+          <!-- Review section (conditional) -->
+          {% if user.role == 'security' or user.role == 'administrator' %}
+          <div class="review-section" id="review-section" style="display: none;">
+            <div class="review-title">✅ Review Incident</div>
+            <input type="text" class="review-input" id="review-note" placeholder="Add note (optional)…">
+            <div class="review-buttons">
+              <button class="btn-review btn-confirm" onclick="submitReview('CONFIRMED')">
+                🚩 Confirm Threat
+              </button>
+              <button class="btn-review btn-dismiss" onclick="submitReview('FALSE_ALARM')">
+                ✔️ False Alarm
+              </button>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </main>
+
+</div>
+
 <script>
+let _currentIncident = null;
 let _currentReportPath = "";
+let _allIncidents = [];
 
 async function loadIncidents() {
   const from   = document.getElementById("from-date").value;
@@ -122,71 +662,49 @@ async function loadIncidents() {
 
   const resp = await fetch("/api/incidents?" + params.toString());
   const incidents = await resp.json();
+  _allIncidents = incidents;
 
-  const grid = document.getElementById("incident-grid");
+  const list = document.getElementById("timeline-list");
 
   if (!incidents.length) {
-    grid.innerHTML = '<p class="loading-msg">No incidents found.</p>';
+    list.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">No incidents found</div></div>';
     return;
   }
 
-  grid.innerHTML = incidents.map(inc => {
-    const typeKey = (inc.detection_type || "OTHER").replace(" ", "_");
-    const ts      = (inc.timestamp || "").slice(0, 19).replace("T", " ");
-    const score   = inc.threat_score || 0;
-    const scoreCls = score >= 70 ? "score-high"
-                   : score >= 40 ? "score-medium" : "score-low";
-    const statusCls = "status-" + (inc.review_status || "PENDING");
-
-    // Clean folder path for routing
-    const folder = (inc._folder || "").replace("evidence/incidents/", "");
-    const thumbPath = folder 
-      ? `/evidence/${folder}/${inc.thumbnail || "thumbnail.jpg"}`
-      : "";
-
-    const hasVideo  = !!(inc.evidence_video);
-    const hasThumb  = !!(inc.thumbnail);
-
-    const thumbHtml = hasThumb && thumbPath
-      ? `<img src="${thumbPath}" alt="Incident thumbnail"
-              onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
-      : "";
-
-    const noThumbHtml = `<div class="no-thumb" style="${hasThumb ? 'display:none' : ''}">No thumbnail</div>`;
-    const playIcon = hasVideo ? `<div class="play-icon">&#9654;</div>` : "";
-
-    // Encode incident object safely for the onclick handler
-    const incJson = JSON.stringify(inc).replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+  list.innerHTML = incidents.map((inc, idx) => {
+    const ts = (inc.timestamp || "").slice(0, 16).replace("T", " ");
+    const score = inc.threat_score || 0;
+    const scoreClass = score >= 70 ? "high" : score >= 40 ? "med" : "low";
 
     return `
-    <div class="incident-card" onclick="openEvidence(${incJson})">
-      <div class="card-thumb">
-        ${thumbHtml}${noThumbHtml}${playIcon}
-      </div>
-      <div class="card-body">
-        <span class="card-type type-${typeKey}">${inc.detection_type || "UNKNOWN"}</span>
-        <p class="card-id">${inc.incident_id || "—"}</p>
-        <p class="card-meta">${ts}</p>
-      </div>
-      <div class="card-footer">
-        <span class="score-badge ${scoreCls}">Score ${score}/100</span>
-        <span class="status-badge ${statusCls}">${inc.review_status || "PENDING"}</span>
-      </div>
+    <div class="timeline-item" onclick="openEvidence(${idx})">
+      <div class="timeline-item-type">${inc.detection_type || "UNKNOWN"}</div>
+      <div class="timeline-item-id">${inc.incident_id || "—"}</div>
+      <div class="timeline-item-time">${ts}</div>
+      <span class="timeline-item-score ${scoreClass}">${score}/100</span>
     </div>`;
   }).join("");
 }
 
-function openEvidence(inc) {
-  // FIX: _folder is already a clean relative path from the API; use as-is
+function openEvidence(idx) {
+  const inc = _allIncidents[idx];
+  if (!inc) return;
+
+  _currentIncident = inc;
   const folder = inc._folder || "";
   _currentReportPath = folder ? `${folder}/report.json` : "";
 
-  document.getElementById("modal-title").textContent =
-    `${inc.incident_id} — ${inc.detection_type}`;
+  // Update timeline active state
+  document.querySelectorAll(".timeline-item").forEach((el, i) => {
+    el.classList.toggle("active", i === idx);
+  });
 
+  // Show/hide main sections
+  document.getElementById("viewer-empty").style.display = "none";
+  document.getElementById("viewer-content").style.display = "flex";
+
+  // Video
   const base = folder ? `/evidence/${folder}` : "";
-
-  // Video element
   const vid = document.getElementById("evidence-video");
   const img = document.getElementById("evidence-thumb");
 
@@ -197,50 +715,52 @@ function openEvidence(inc) {
     vid.src = `${base}/${inc.evidence_video}`;
     vid.style.display = "block";
     vid.load();
-    vid.play().catch(e => console.log("Auto-play prevented", e));
+    vid.play().catch(e => console.log("Auto-play prevented"));
   } else if (inc.thumbnail && base) {
     img.src = `${base}/${inc.thumbnail}`;
     img.style.display = "block";
   }
 
-  // Meta grid
+  // Metadata
+  document.getElementById("viewer-type").textContent = (inc.detection_type || "INCIDENT").toUpperCase();
+  document.getElementById("viewer-id").textContent = inc.incident_id || "—";
+  document.getElementById("meta-timestamp").textContent = (inc.timestamp || "").slice(0, 19).replace("T", " ") || "—";
+  document.getElementById("meta-duration").textContent = `${(inc.pre_event_s || 0) + (inc.post_event_s || 0)}s`;
+  document.getElementById("meta-pre").textContent = `${inc.pre_event_s || "—"}s`;
+  document.getElementById("meta-post").textContent = `${inc.post_event_s || "—"}s`;
+  document.getElementById("meta-score").textContent = `${inc.threat_score || 0}/100`;
+  document.getElementById("meta-status").innerHTML = `<span class="status-badge status-${inc.review_status || "PENDING"}">${inc.review_status || "PENDING"}</span>`;
+
+  // Custom metrics
+  const metricsCard = document.getElementById("metrics-card");
   const m = inc.metrics || {};
-  const metas = [
-    ["Threat score",   `${inc.threat_score || 0}/100`],
-    ["Status",         inc.review_status || "PENDING"],
-    ["Pre-event",      `${inc.pre_event_s || "—"}s`],
-    ["Post-event",     `${inc.post_event_s || "—"}s`],
-    ...Object.entries(m).map(([k, v]) => [k.replace(/_/g, " "), v]),
-    inc.reviewed_by ? ["Reviewed by", inc.reviewed_by] : null,
-    inc.review_note ? ["Note",        inc.review_note] : null,
-  ].filter(Boolean);
+  if (Object.keys(m).length > 0) {
+    metricsCard.style.display = "block";
+    document.getElementById("metrics-list").innerHTML = Object.entries(m)
+      .map(([k, v]) => `
+        <div class="metadata-item">
+          <span class="metadata-label">${k.replace(/_/g, " ")}</span>
+          <span class="metadata-value">${v}</span>
+        </div>`
+      ).join("");
+  } else {
+    metricsCard.style.display = "none";
+  }
 
-  document.getElementById("evidence-meta").innerHTML =
-    metas.map(([label, val]) =>
-      `<div class="meta-item">
-         <label>${label}</label>
-         <span>${val}</span>
-       </div>`
-    ).join("");
-
-  document.getElementById("evidence-modal").style.display = "flex";
-}
-
-function closeModal(e) {
-  if (e && e.target !== document.getElementById("evidence-modal")) return;
-  document.getElementById("evidence-modal").style.display = "none";
-  const vid = document.getElementById("evidence-video");
-  vid.pause();
-  vid.src = "";
+  // Show review section if applicable
+  const reviewSection = document.getElementById("review-section");
+  if (reviewSection) {
+    reviewSection.style.display = "block";
+  }
 }
 
 async function submitReview(status) {
   const noteInput = document.getElementById("review-note");
   const note = noteInput ? noteInput.value.trim() : "";
-  
+
   if (!_currentReportPath) {
-      alert("Error: Cannot find report path.");
-      return;
+    alert("Error: Cannot find report path.");
+    return;
   }
 
   const resp = await fetch("/api/incident/review", {
@@ -253,9 +773,8 @@ async function submitReview(status) {
   });
   const data = await resp.json();
   if (data.ok) {
-    closeModal();
+    if (noteInput) noteInput.value = "";
     loadIncidents();
-    if(noteInput) noteInput.value = ""; // Clear the input
   } else {
     alert(data.error || "Review failed.");
   }
@@ -264,4 +783,5 @@ async function submitReview(status) {
 // Load on page open
 loadIncidents();
 </script>
+
 {% endblock %}

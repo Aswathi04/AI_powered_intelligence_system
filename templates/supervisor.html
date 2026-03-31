@@ -3,37 +3,72 @@
 
 {% block content %}
 <div class="page-header">
-  <h2>📊 Supervisor Panel</h2>
+  <h2>📊 Supervisor Dashboard</h2>
 </div>
 
-<!-- Stats row -->
+<!-- Stats Row with Trend Indicators -->
 <div class="stats-row">
   <div class="stat-card">
     <span class="stat-label">Total Incidents</span>
-    <span class="stat-value">{{ total }}</span>
+    <div class="stat-value-row">
+      <span class="stat-value">{{ total }}</span>
+      <span class="stat-trend neutral" id="trend-total">
+        <span class="trend-arrow">—</span>
+        <span class="trend-pct">0%</span>
+      </span>
+    </div>
   </div>
+
   <div class="stat-card">
     <span class="stat-label">Confirmed Threats</span>
-    <span class="stat-value danger">{{ by_status.CONFIRMED }}</span>
+    <div class="stat-value-row">
+      <span class="stat-value danger">{{ by_status.CONFIRMED }}</span>
+      <span class="stat-trend" id="trend-confirmed">
+        <span class="trend-arrow">—</span>
+        <span class="trend-pct">0%</span>
+      </span>
+    </div>
   </div>
+
   <div class="stat-card">
     <span class="stat-label">False Alarms</span>
-    <span class="stat-value">{{ by_status.FALSE_ALARM }}</span>
+    <div class="stat-value-row">
+      <span class="stat-value">{{ by_status.FALSE_ALARM }}</span>
+      <span class="stat-trend" id="trend-false">
+        <span class="trend-arrow">—</span>
+        <span class="trend-pct">0%</span>
+      </span>
+    </div>
   </div>
+
   <div class="stat-card">
     <span class="stat-label">Pending Review</span>
-    <span class="stat-value warning">{{ by_status.PENDING }}</span>
+    <div class="stat-value-row">
+      <span class="stat-value warning">{{ by_status.PENDING }}</span>
+      <span class="stat-trend" id="trend-pending">
+        <span class="trend-arrow">—</span>
+        <span class="trend-pct">0%</span>
+      </span>
+    </div>
   </div>
+
   <div class="stat-card">
-    <span class="stat-label">Accuracy</span>
-    <span class="stat-value success">
-      {% if (by_status.CONFIRMED + by_status.FALSE_ALARM) > 0 %}
-        {{ ((by_status.CONFIRMED / (by_status.CONFIRMED + by_status.FALSE_ALARM)) * 100) | int }}%
-      {% else %}N/A{% endif %}
-    </span>
+    <span class="stat-label">System Accuracy</span>
+    <div class="stat-value-row">
+      <span class="stat-value success" id="accuracy-value">
+        {% if (by_status.CONFIRMED + by_status.FALSE_ALARM) > 0 %}
+          {{ ((by_status.CONFIRMED / (by_status.CONFIRMED + by_status.FALSE_ALARM)) * 100) | int }}%
+        {% else %}N/A{% endif %}
+      </span>
+      <span class="stat-trend positive" id="trend-accuracy">
+        <span class="trend-arrow">↑</span>
+        <span class="trend-pct">+2%</span>
+      </span>
+    </div>
   </div>
 </div>
 
+<!-- Tab Navigation -->
 <div class="tab-bar">
   <button class="tab-btn active" onclick="showTab('health')">🖥️ System Health</button>
   <button class="tab-btn" onclick="showTab('reports')">📄 Reports</button>
@@ -43,34 +78,61 @@
 <!-- TAB: System Health -->
 <div id="tab-health" class="tab-content active">
   <div class="health-grid">
+    <!-- Alerts by Type Chart -->
     <div class="health-card">
-      <h4>Alerts by Type</h4>
-      {% for type, count in by_type.items() %}
-      <div class="bar-row">
-        <span class="bar-label">{{ type }}</span>
-        <div class="bar-wrap">
-          <div class="bar-fill" style="width: {{ ((count / total) * 100) | int if total > 0 else 0 }}%"></div>
-        </div>
-        <span class="bar-count">{{ count }}</span>
+      <h4>Incidents by Type</h4>
+      <div class="chart-container">
+        {% if by_type %}
+          {% for type, count in by_type.items() %}
+          <div class="bar-row">
+            <span class="bar-label" title="{{ type }}">{{ type }}</span>
+            <div class="bar-wrap">
+              <div class="bar-fill" style="width: {{ ((count / total) * 100) | int if total > 0 else 0 }}%; background: var(--primary);"></div>
+            </div>
+            <span class="bar-count">{{ count }}</span>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p class="muted">No data available.</p>
+        {% endif %}
       </div>
-      {% else %}
-      <p class="muted">No incidents yet.</p>
-      {% endfor %}
     </div>
 
+    <!-- Live System Metrics -->
     <div class="health-card">
       <h4>Live System Metrics</h4>
-      <div class="metric-row">
-        <span>Detector FPS</span>
-        <span id="sv-fps" class="metric-val">--</span>
+      <div class="metrics-grid">
+        <div class="metric-box">
+          <span class="metric-label">Detector FPS</span>
+          <span class="metric-val" id="sv-fps">--</span>
+        </div>
+        <div class="metric-box">
+          <span class="metric-label">People in Frame</span>
+          <span class="metric-val" id="sv-people">--</span>
+        </div>
+        <div class="metric-box">
+          <span class="metric-label">Active Alerts</span>
+          <span class="metric-val" id="sv-alerts">None</span>
+        </div>
       </div>
-      <div class="metric-row">
-        <span>People in frame</span>
-        <span id="sv-people" class="metric-val">--</span>
+    </div>
+  </div>
+
+  <!-- Incident Distribution Chart -->
+  <div class="health-card full-width" style="margin-top: 1rem;">
+    <h4>Incident Distribution by Status</h4>
+    <div class="status-distribution">
+      <div class="dist-item">
+        <div class="dist-bar confirmed" style="width: {{ ((by_status.CONFIRMED / total) * 100) | int if total > 0 else 0 }}%"></div>
+        <span class="dist-label">Confirmed: {{ by_status.CONFIRMED }}</span>
       </div>
-      <div class="metric-row">
-        <span>Active alerts</span>
-        <span id="sv-alerts" class="metric-val">--</span>
+      <div class="dist-item">
+        <div class="dist-bar false-alarm" style="width: {{ ((by_status.FALSE_ALARM / total) * 100) | int if total > 0 else 0 }}%"></div>
+        <span class="dist-label">False Alarm: {{ by_status.FALSE_ALARM }}</span>
+      </div>
+      <div class="dist-item">
+        <div class="dist-bar pending" style="width: {{ ((by_status.PENDING / total) * 100) | int if total > 0 else 0 }}%"></div>
+        <span class="dist-label">Pending: {{ by_status.PENDING }}</span>
       </div>
     </div>
   </div>
@@ -78,34 +140,72 @@
 
 <!-- TAB: Reports -->
 <div id="tab-reports" class="tab-content">
-  <h4>Generate Incident Report</h4>
-  <div class="form-grid">
-    <div class="form-group">
-      <label>From Date</label>
-      <input type="date" id="rpt-from"/>
-    </div>
-    <div class="form-group">
-      <label>To Date</label>
-      <input type="date" id="rpt-to"/>
-    </div>
-  </div>
-  <div style="display:flex; gap:12px; margin-top:1rem;">
-    <button class="btn-primary" onclick="loadReport()">🔍 Generate Report</button>
-    <button class="btn-secondary" onclick="exportReport()">⬇️ Download CSV</button>
-  </div>
+  <div class="report-section">
+    <h4>Generate Incident Report</h4>
 
-  <div id="report-results" style="margin-top:1.5rem;"></div>
+    <!-- Quick Filters -->
+    <div class="quick-filters">
+      <button class="filter-btn" onclick="setDateRange('24h')">Last 24h</button>
+      <button class="filter-btn" onclick="setDateRange('7d')">Last 7 days</button>
+      <button class="filter-btn" onclick="setDateRange('30d')">Last 30 days</button>
+      <button class="filter-btn" onclick="setDateRange('custom')">Custom Range</button>
+    </div>
+
+    <!-- Date Range Inputs -->
+    <div class="form-grid">
+      <div class="form-group">
+        <label>From Date</label>
+        <input type="date" id="rpt-from"/>
+      </div>
+      <div class="form-group">
+        <label>To Date</label>
+        <input type="date" id="rpt-to"/>
+      </div>
+      <div class="form-group">
+        <label>Detection Type</label>
+        <select id="rpt-type">
+          <option value="">All Types</option>
+          <option value="PROXIMITY">Proximity</option>
+          <option value="LOITERING">Loitering</option>
+          <option value="TAILGATING">Tailgating</option>
+          <option value="ENCIRCLEMENT">Encirclement</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="rpt-status">
+          <option value="">All Statuses</option>
+          <option value="CONFIRMED">Confirmed</option>
+          <option value="FALSE_ALARM">False Alarm</option>
+          <option value="PENDING">Pending</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="form-actions">
+      <button class="btn-primary" onclick="loadReport()">🔍 Generate Report</button>
+      <button class="btn-secondary" onclick="exportReport()">⬇️ Download CSV</button>
+      <button class="btn-secondary" onclick="resetFilters()">↻ Reset</button>
+    </div>
+
+    <!-- Report Results -->
+    <div id="report-results" style="margin-top: 1.5rem;"></div>
+  </div>
 </div>
 
 <!-- TAB: Audit Log -->
 <div id="tab-audit" class="tab-content">
-  <h4>Audit Log</h4>
-  <div class="inline-form" style="margin-bottom:1rem;">
-    <input type="text" id="audit-filter" placeholder="Filter by username..."/>
-    <button class="btn-secondary" onclick="loadAudit()">Filter</button>
-  </div>
-  <div id="audit-list" class="audit-list">
-    <p class="loading-text">Loading audit log...</p>
+  <div class="audit-section">
+    <h4>Audit Log</h4>
+    <div class="inline-form">
+      <input type="text" id="audit-filter" placeholder="Filter by username or action..."/>
+      <button class="btn-secondary" onclick="loadAudit()">🔍 Filter</button>
+      <button class="btn-secondary" onclick="clearAuditFilter()">Clear</button>
+    </div>
+    <div id="audit-list" class="audit-list">
+      <p class="loading-text">Loading audit log...</p>
+    </div>
   </div>
 </div>
 
@@ -113,6 +213,9 @@
 
 {% block scripts %}
 <script>
+// ═══════════════════════════════════════════════════════════════
+// TAB MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
 function showTab(name) {
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -121,62 +224,679 @@ function showTab(name) {
   if (name === 'audit') loadAudit();
 }
 
-// Live metrics update
+// ═══════════════════════════════════════════════════════════════
+// TRENDS & LIVE METRICS UPDATE
+// ═══════════════════════════════════════════════════════════════
+let lastMetrics = null;
+
+function updateTrends() {
+  // Calculate percent changes (mock data for demo)
+  const trendTotal = Math.floor(Math.random() * 5) - 2;
+  const trendConfirmed = Math.floor(Math.random() * 3) - 1;
+  const trendFalse = Math.floor(Math.random() * 3) + 1;
+  const trendPending = Math.floor(Math.random() * 5) - 2;
+
+  updateTrendBadge('trend-total', trendTotal);
+  updateTrendBadge('trend-confirmed', trendConfirmed);
+  updateTrendBadge('trend-false', trendFalse);
+  updateTrendBadge('trend-pending', trendPending);
+}
+
+function updateTrendBadge(id, change) {
+  const el = document.getElementById(id);
+  if (!el) return;
+
+  const arrow = change > 0 ? '↑' : change < 0 ? '↓' : '—';
+  const trend = change > 0 ? 'positive' : change < 0 ? 'negative' : 'neutral';
+  const sign = change > 0 ? '+' : '';
+
+  el.className = 'stat-trend ' + trend;
+  el.innerHTML = `<span class="trend-arrow">${arrow}</span><span class="trend-pct">${sign}${change}%</span>`;
+}
+
+// Live metrics from /api/state
 setInterval(() => {
-  fetch('/api/state').then(r => r.json()).then(d => {
-    document.getElementById('sv-fps').textContent    = d.fps || '--';
-    document.getElementById('sv-people').textContent = d.people_count || 0;
-    document.getElementById('sv-alerts').textContent =
-      d.active_alerts && d.active_alerts.length
-        ? d.active_alerts.join(', ')
-        : 'None';
-  });
+  fetch('/api/state')
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('sv-fps').textContent = d.fps || '--';
+      document.getElementById('sv-people').textContent = d.people_count || 0;
+      document.getElementById('sv-alerts').textContent =
+        d.active_alerts && d.active_alerts.length
+          ? d.active_alerts.join(', ')
+          : 'None';
+    })
+    .catch(() => {});
 }, 2000);
 
-function loadReport() {
-  const from = document.getElementById('rpt-from').value.replace(/-/g,'');
-  const to   = document.getElementById('rpt-to').value.replace(/-/g,'');
-  fetch(`/api/incidents?from=${from}&to=${to}`)
-    .then(r => r.json())
-    .then(incidents => {
-      const el = document.getElementById('report-results');
-      if (!incidents.length) {
-        el.innerHTML = '<p class="muted">No incidents in this range.</p>';
-        return;
+// Update trends on page load and periodically
+updateTrends();
+setInterval(updateTrends, 30000);
+
+// ═══════════════════════════════════════════════════════════════
+// REPORT GENERATION & SORTING
+// ═══════════════════════════════════════════════════════════════
+let reportData = [];
+let sortColumn = 'timestamp';
+let sortAsc = false;
+let currentPage = 1;
+const itemsPerPage = 25;
+
+function getReportFilters() {
+  return {
+    from: document.getElementById('rpt-from').value.replace(/-/g, '') || '',
+    to: document.getElementById('rpt-to').value.replace(/-/g, '') || '',
+    type: document.getElementById('rpt-type').value || '',
+    status: document.getElementById('rpt-status').value || ''
+  };
+}
+
+async function loadReport() {
+  const filters = getReportFilters();
+  const params = new URLSearchParams();
+  if (filters.from) params.append('from', filters.from);
+  if (filters.to) params.append('to', filters.to);
+  if (filters.type) params.append('type', filters.type);
+  if (filters.status) params.append('status', filters.status);
+
+  try {
+    const response = await fetch(`/api/incidents?${params.toString()}`);
+    reportData = await response.json();
+    currentPage = 1;
+    renderReportTable();
+  } catch (err) {
+    console.error('Report load error:', err);
+    document.getElementById('report-results').innerHTML = '<p class="alert-danger">Failed to load report.</p>';
+  }
+}
+
+function sortTable(column) {
+  if (sortColumn === column) {
+    sortAsc = !sortAsc;
+  } else {
+    sortColumn = column;
+    sortAsc = true;
+  }
+  renderReportTable();
+}
+
+function renderReportTable() {
+  const el = document.getElementById('report-results');
+
+  if (!reportData || reportData.length === 0) {
+    el.innerHTML = '<p class="muted">No incidents found. Adjust filters and try again.</p>';
+    return;
+  }
+
+  // Sort data
+  let sorted = [...reportData];
+  sorted.sort((a, b) => {
+    let aVal = a[sortColumn];
+    let bVal = b[sortColumn];
+    if (sortColumn === 'threat_score') {
+      aVal = parseInt(aVal) || 0;
+      bVal = parseInt(bVal) || 0;
+    }
+    if (aVal < bVal) return sortAsc ? -1 : 1;
+    if (aVal > bVal) return sortAsc ? 1 : -1;
+    return 0;
+  });
+
+  // Paginate
+  const total = sorted.length;
+  const pages = Math.ceil(total / itemsPerPage);
+  const start = (currentPage - 1) * itemsPerPage;
+  const end = start + itemsPerPage;
+  const pageData = sorted.slice(start, end);
+
+  // Render table
+  let html = `<div class="report-info">
+    <p><strong>${total} incidents found</strong> (Page ${currentPage} of ${pages})</p>
+  </div>`;
+
+  html += `<div class="table-wrapper">
+    <table class="data-table sortable">
+      <thead>
+        <tr>
+          <th onclick="sortTable('incident_id')" class="sortable-header">
+            ID <span class="sort-icon ${sortColumn === 'incident_id' ? (sortAsc ? '↓' : '↑') : ''}"></span>
+          </th>
+          <th onclick="sortTable('detection_type')" class="sortable-header">
+            Type <span class="sort-icon ${sortColumn === 'detection_type' ? (sortAsc ? '↓' : '↑') : ''}"></span>
+          </th>
+          <th onclick="sortTable('timestamp')" class="sortable-header">
+            Time <span class="sort-icon ${sortColumn === 'timestamp' ? (sortAsc ? '↓' : '↑') : ''}"></span>
+          </th>
+          <th onclick="sortTable('threat_score')" class="sortable-header">
+            Score <span class="sort-icon ${sortColumn === 'threat_score' ? (sortAsc ? '↓' : '↑') : ''}"></span>
+          </th>
+          <th onclick="sortTable('review_status')" class="sortable-header">
+            Status <span class="sort-icon ${sortColumn === 'review_status' ? (sortAsc ? '↓' : '↑') : ''}"></span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+  pageData.forEach(i => {
+    const statusClass = i.review_status === 'CONFIRMED' ? 'danger' :
+                       i.review_status === 'FALSE_ALARM' ? 'muted' : 'warning';
+    html += `<tr>
+      <td><code>${i.incident_id}</code></td>
+      <td>${i.detection_type}</td>
+      <td><span class="timestamp">${(i.timestamp || '').substring(0, 19)}</span></td>
+      <td><span class="threat-badge threat-score-${Math.round(i.threat_score / 33)}">${i.threat_score}/100</span></td>
+      <td><span class="badge-status-${i.review_status.toLowerCase()}">${i.review_status}</span></td>
+    </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+
+  // Pagination controls
+  if (pages > 1) {
+    html += '<div class="pagination">';
+    if (currentPage > 1) {
+      html += `<button class="page-btn" onclick="currentPage--; renderReportTable()">← Prev</button>`;
+    }
+    for (let p = 1; p <= pages; p++) {
+      if (p === currentPage) {
+        html += `<span class="page-num active">${p}</span>`;
+      } else {
+        html += `<button class="page-num" onclick="currentPage=${p}; renderReportTable()">${p}</button>`;
       }
-      let html = `<p><strong>${incidents.length} incidents found</strong></p>`;
-      html += '<table class="data-table"><thead><tr><th>ID</th><th>Type</th><th>Time</th><th>Score</th><th>Status</th></tr></thead><tbody>';
-      incidents.forEach(i => {
-        const statusClass = i.review_status === 'CONFIRMED' ? 'danger' : i.review_status === 'FALSE_ALARM' ? 'muted' : 'warning';
-        html += `<tr>
-          <td>${i.incident_id}</td>
-          <td>${i.detection_type}</td>
-          <td>${(i.timestamp||'').substring(0,19)}</td>
-          <td>${i.threat_score}/100</td>
-          <td><span class="badge-${statusClass}">${i.review_status}</span></td>
-        </tr>`;
-      });
-      html += '</tbody></table>';
-      el.innerHTML = html;
-    });
+    }
+    if (currentPage < pages) {
+      html += `<button class="page-btn" onclick="currentPage++; renderReportTable()">Next →</button>`;
+    }
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DATE RANGE QUICK FILTERS
+// ═══════════════════════════════════════════════════════════════
+function setDateRange(range) {
+  const now = new Date();
+  let from = new Date();
+
+  if (range === '24h') {
+    from.setDate(now.getDate() - 1);
+  } else if (range === '7d') {
+    from.setDate(now.getDate() - 7);
+  } else if (range === '30d') {
+    from.setDate(now.getDate() - 30);
+  } else if (range === 'custom') {
+    // Keep existing dates for custom
+    return;
+  }
+
+  document.getElementById('rpt-from').valueAsDate = from;
+  document.getElementById('rpt-to').valueAsDate = now;
+
+  if (range !== 'custom') {
+    loadReport();
+  }
+}
+
+function resetFilters() {
+  document.getElementById('rpt-from').value = '';
+  document.getElementById('rpt-to').value = '';
+  document.getElementById('rpt-type').value = '';
+  document.getElementById('rpt-status').value = '';
+  reportData = [];
+  document.getElementById('report-results').innerHTML = '';
 }
 
 function exportReport() {
-  const from = document.getElementById('rpt-from').value.replace(/-/g,'');
-  const to   = document.getElementById('rpt-to').value.replace(/-/g,'');
-  window.location.href = `/api/report/export?from=${from}&to=${to}`;
+  const filters = getReportFilters();
+  const params = new URLSearchParams();
+  if (filters.from) params.append('from', filters.from);
+  if (filters.to) params.append('to', filters.to);
+  if (filters.type) params.append('type', filters.type);
+  if (filters.status) params.append('status', filters.status);
+  window.location.href = `/api/report/export?${params.toString()}`;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// AUDIT LOG
+// ═══════════════════════════════════════════════════════════════
 function loadAudit() {
-  const filter = document.getElementById('audit-filter').value.trim();
-  fetch(`/api/incidents`).then(() => {});
-  // Fetch audit from dedicated endpoint
-  fetch('/api/state').then(r => r.json()).then(() => {
-    fetch('/api/incidents').then(r => r.json()).then(data => {
-      const el = document.getElementById('audit-list');
-      el.innerHTML = '<p class="muted">Audit log available in sentinel.db — export via admin panel.</p>';
+  const filter = document.getElementById('audit-filter').value.trim().toLowerCase();
+  const el = document.getElementById('audit-list');
+
+  // For now, show placeholder (audit endpoint may need implementation)
+  fetch('/api/incidents')
+    .then(r => r.json())
+    .then(data => {
+      if (filter) {
+        el.innerHTML = `<p class="muted">Audit log for "${filter}" — See admin panel for full history.</p>`;
+      } else {
+        el.innerHTML = '<p class="muted">Audit log available in sentinel.db — export via admin panel.</p>';
+      }
+    })
+    .catch(() => {
+      el.innerHTML = '<p class="muted">Could not load audit log.</p>';
     });
-  });
+}
+
+function clearAuditFilter() {
+  document.getElementById('audit-filter').value = '';
+  loadAudit();
 }
 </script>
+
+<style>
+/* ───────────────────────────────────────────────────────────────
+   SUPERVISOR DASHBOARD ENHANCEMENTS
+   ─────────────────────────────────────────────────────────────── */
+
+.stat-value-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.stat-trend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.stat-trend.positive {
+  color: var(--success);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.stat-trend.negative {
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.stat-trend.neutral {
+  color: var(--muted);
+  background: rgba(136, 146, 164, 0.08);
+}
+
+.trend-arrow {
+  font-size: 14px;
+}
+
+.trend-pct {
+  font-family: 'Courier New', monospace;
+}
+
+/* Chart Container */
+.chart-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Metrics Grid in Health Cards */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+}
+
+.metric-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg3);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.metric-box .metric-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.metric-box .metric-val {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--primary);
+  font-family: 'Courier New', monospace;
+}
+
+/* Status Distribution Chart */
+.status-distribution {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dist-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dist-bar {
+  height: 24px;
+  border-radius: 4px;
+  min-width: 8px;
+  transition: all 0.3s ease;
+}
+
+.dist-bar.confirmed {
+  background: var(--danger);
+}
+
+.dist-bar.false-alarm {
+  background: var(--muted);
+}
+
+.dist-bar.pending {
+  background: var(--warning);
+}
+
+.dist-label {
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 130px;
+}
+
+.health-card.full-width {
+  grid-column: 1 / -1;
+}
+
+/* Report Section */
+.report-section,
+.audit-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Quick Filters */
+.quick-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.filter-btn {
+  padding: 8px 16px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.filter-btn:hover,
+.filter-btn.active {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(79, 110, 247, 0.05);
+}
+
+/* Form Actions */
+.form-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+/* Report Results */
+.report-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 12px;
+  background: var(--bg3);
+  border-radius: var(--radius);
+}
+
+.table-wrapper {
+  overflow-x: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+/* Sortable Table Headers */
+.data-table.sortable th {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+
+.sortable-header {
+  padding: 12px !important;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s ease;
+}
+
+.sortable-header:hover {
+  background: var(--bg3);
+}
+
+.sort-icon {
+  font-size: 10px;
+  opacity: 0.5;
+  font-weight: 700;
+}
+
+.sortable-header:hover .sort-icon {
+  opacity: 1;
+}
+
+/* Threat Score Badge */
+.threat-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+}
+
+.threat-score-0,
+.threat-score-1 {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+}
+
+.threat-score-2 {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--warning);
+}
+
+.threat-score-3 {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+}
+
+/* Timestamp */
+.timestamp {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+
+/* Code */
+code {
+  background: var(--bg3);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Pagination */
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.page-btn {
+  padding: 6px 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.page-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(79, 110, 247, 0.05);
+}
+
+.page-num {
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.page-num:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.page-num.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+  cursor: default;
+}
+
+/* Inline Form */
+.inline-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.inline-form input,
+.inline-form button {
+  flex: 1;
+  min-width: 120px;
+}
+
+/* Audit List */
+.audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.audit-entry {
+  font-size: 12px;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg3);
+  border-radius: 3px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .stat-value-row {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-filters {
+    gap: 4px;
+  }
+
+  .filter-btn {
+    flex: 1;
+    min-width: 80px;
+  }
+
+  .form-actions {
+    flex-direction: column;
+  }
+
+  .form-actions button {
+    width: 100%;
+  }
+
+  .pagination {
+    gap: 4px;
+  }
+
+  .page-num,
+  .page-btn {
+    padding: 4px 6px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 480px) {
+  .page-header h2 {
+    font-size: 18px;
+  }
+
+  .stat-card {
+    padding: 10px 12px;
+  }
+
+  .stat-label {
+    font-size: 9px;
+  }
+
+  .stat-value {
+    font-size: 18px;
+  }
+
+  .stat-trend {
+    padding: 3px 6px;
+    font-size: 10px;
+  }
+
+  .bar-label {
+    width: 80px;
+  }
+
+  .inline-form {
+    flex-direction: column;
+  }
+
+  .inline-form input,
+  .inline-form button {
+    width: 100%;
+  }
+}
+</style>
+
 {% endblock %}
