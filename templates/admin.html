@@ -1,0 +1,583 @@
+{% extends "base.html" %}
+{% block title %}Admin Panel — Sentinel AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>⚙️ Administrator Panel</h2>
+  <span class="nav-role-badge role-administrator">ADMIN</span>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="showTab('config', this)">🎛️ Configuration</button>
+  <button class="tab-btn"        onclick="showTab('users',  this)">👥 Users</button>
+  <button class="tab-btn"        onclick="showTab('recipients', this)">📱 Recipients</button>
+  <button class="tab-btn"        onclick="showTab('evidence', this)">🎥 Evidence</button>
+  <button class="tab-btn"        onclick="showTab('audit', this)">📋 Audit Log</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     TAB 1 — Configuration
+════════════════════════════════════════════════ -->
+<div id="tab-config" class="tab-content active">
+
+  <form method="POST" action="/api/config" class="settings-form">
+
+    <!-- Demo Mode -->
+    <div class="form-section" style="border-left: 3px solid var(--primary); padding-left: 16px;">
+      <h4>🎭 Demo Mode</h4>
+      <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+        Process a pre-recorded video instead of the live webcam. Useful for evaluations and presentations.
+      </p>
+      <div class="form-grid">
+        <div class="form-group" style="flex-direction:row; align-items:center; gap:10px;">
+          <input type="checkbox" id="demo_mode" name="demo_mode"
+                 style="width:16px;height:16px;cursor:pointer;accent-color:var(--primary);"
+                 {% if config.DEMO_MODE %}checked{% endif %}>
+          <label for="demo_mode" style="margin:0; cursor:pointer; color:var(--text);">Enable Demo Mode Loop</label>
+        </div>
+        <div class="form-group">
+          <label>Demo Video Filename</label>
+          <input type="text" name="demo_video" value="{{ config.DEMO_VIDEO | default('demo_attack.mp4') }}"/>
+          <span class="form-hint">Place file in AI_powered_intelligence_system/ root folder.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Camera -->
+    <div class="form-section">
+      <h4>📷 Camera Settings</h4>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Camera Port</label>
+          <input type="number" name="camera_port" min="0" max="10" value="{{ config.CAMERA_PORT }}"/>
+          <span class="form-hint">0 = default webcam</span>
+        </div>
+        <div class="form-group">
+          <label>Location Name</label>
+          <input type="text" name="camera_location" value="{{ config.CAMERA_LOCATION }}"/>
+        </div>
+        <div class="form-group">
+          <label>Frame Width</label>
+          <select name="frame_width">
+            {% for w in [320, 480, 640, 1280] %}
+            <option value="{{ w }}" {% if config.FRAME_WIDTH == w %}selected{% endif %}>{{ w }}px</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Frame Height</label>
+          <select name="frame_height">
+            {% for h in [240, 360, 480, 720] %}
+            <option value="{{ h }}" {% if config.FRAME_HEIGHT == h %}selected{% endif %}>{{ h }}px</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Skip Frames</label>
+          <input type="number" name="skip_frames" min="1" max="5" value="{{ config.SKIP_FRAMES }}"/>
+          <span class="form-hint">Higher = faster, less accurate</span>
+        </div>
+        <div class="form-group">
+          <label>GSM Port</label>
+          <input type="text" name="gsm_port" value="{{ config.GSM_PORT }}"/>
+          <span class="form-hint">Windows: COM3 | Linux: /dev/ttyUSB0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Thresholds -->
+    <div class="form-section">
+      <h4>🎯 Threat Thresholds</h4>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Proximity Limit (px)</label>
+          <input type="number" name="proximity_limit" value="{{ config.PROXIMITY_LIMIT }}"/>
+          <span class="form-hint">Alert when two people are closer than this</span>
+        </div>
+        <div class="form-group">
+          <label>Speed Threshold (×)</label>
+          <input type="number" name="speed_threshold" step="0.1" value="{{ config.SPEED_THRESHOLD }}"/>
+          <span class="form-hint">Sudden speed multiplier to trigger alert</span>
+        </div>
+        <div class="form-group">
+          <label>Encirclement Radius (px)</label>
+          <input type="number" name="encirclement_dist" value="{{ config.ENCIRCLEMENT_DIST }}"/>
+        </div>
+        <div class="form-group">
+          <label>Max Gap (degrees)</label>
+          <input type="number" name="max_gap_threshold" value="{{ config.MAX_GAP_THRESHOLD }}"/>
+          <span class="form-hint">Smaller = tighter encirclement required</span>
+        </div>
+        <div class="form-group">
+          <label>Min Encirclers</label>
+          <input type="number" name="min_encirclers" min="2" max="6" value="{{ config.MIN_ENCIRCLERS }}"/>
+        </div>
+      </div>
+    </div>
+
+    <button type="submit" class="btn-primary">💾 Save Configuration</button>
+  </form>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════
+     TAB 2 — Users
+════════════════════════════════════════════════ -->
+<div id="tab-users" class="tab-content">
+
+  <h4 style="margin-bottom:1rem;">Current Accounts</h4>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Full Name</th>
+        <th>Username</th>
+        <th>Role</th>
+        <th>Status</th>
+        <th>Last Login</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.full_name }}</td>
+        <td><code>{{ u.username }}</code></td>
+        <td><span class="role-badge role-{{ u.role }}">{{ u.role }}</span></td>
+        <td>
+          {% if u.is_active %}
+            <span class="badge-success">● Active</span>
+          {% else %}
+            <span class="badge-danger">● Disabled</span>
+          {% endif %}
+        </td>
+        <td>{{ u.last_login[:16] if u.last_login else 'Never' }}</td>
+        <td>
+          {% if u.username != user.username %}
+          <button class="btn-sm {% if u.is_active %}btn-danger{% endif %}"
+            onclick="toggleUser('{{ u.username }}', {{ 'false' if u.is_active else 'true' }})">
+            {{ '🔒 Disable' if u.is_active else '🔓 Enable' }}
+          </button>
+          {% else %}
+          <span class="muted">you</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <hr/>
+  <h4 style="margin-bottom:1rem;">➕ Add New Account</h4>
+  <div class="form-grid" style="max-width:700px;">
+    <div class="form-group">
+      <label>Username</label>
+      <input type="text" id="new-username" placeholder="e.g. john_smith"/>
+    </div>
+    <div class="form-group">
+      <label>Full Name</label>
+      <input type="text" id="new-fullname" placeholder="e.g. John Smith"/>
+    </div>
+    <div class="form-group">
+      <label>Role</label>
+      <select id="new-role">
+        <option value="security">Security</option>
+        <option value="administrator">Administrator</option>
+        <option value="supervisor">Supervisor</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="new-password" placeholder="Min 8 characters"/>
+    </div>
+    <div class="form-group">
+      <label>Email (optional)</label>
+      <input type="email" id="new-email" placeholder="john@example.com"/>
+    </div>
+  </div>
+  <button class="btn-primary" onclick="addUser()">➕ Create Account</button>
+  <div id="add-user-msg" class="form-msg"></div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════
+     TAB 3 — Recipients
+════════════════════════════════════════════════ -->
+<div id="tab-recipients" class="tab-content">
+
+  <h4 style="margin-bottom:6px;">📱 SMS Alert Recipients</h4>
+  <p style="font-size:12px; color:var(--muted); margin-bottom:1.5rem;">
+    These numbers receive an SMS when the threat score exceeds 70.
+  </p>
+
+  {% set numbers = config.ALERT_NUMBERS %}
+  {% if numbers %}
+  <ul class="recipient-list">
+    {% for num in numbers %}
+    <li>
+      <span style="font-size:13px;">📞 {{ num }}</span>
+      <form method="POST" action="/api/recipients" style="display:inline">
+        <input type="hidden" name="action" value="remove"/>
+        <input type="hidden" name="number" value="{{ num }}"/>
+        <button type="submit" class="btn-sm btn-danger">Remove</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted" style="margin-bottom:1.5rem;">No recipients configured.</p>
+  {% endif %}
+
+  <hr/>
+  <h4 style="margin-bottom:1rem;">➕ Add Recipient</h4>
+  <form method="POST" action="/api/recipients" class="inline-form">
+    <input type="hidden" name="action" value="add"/>
+    <div class="form-group">
+      <input type="text" name="number" placeholder="+91XXXXXXXXXX" required
+             style="min-width:200px;"/>
+    </div>
+    <button type="submit" class="btn-primary">Add</button>
+  </form>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════
+     TAB 4 — Evidence Viewer
+════════════════════════════════════════════════ -->
+<div id="tab-evidence" class="tab-content">
+
+  <!-- Filter bar -->
+  <div class="filter-bar">
+    <div class="form-group">
+      <label>Threat Type</label>
+      <select id="ev-type" onchange="loadEvidence()">
+        <option value="">All types</option>
+        <option value="PROXIMITY">Proximity</option>
+        <option value="ENCIRCLEMENT">Encirclement</option>
+        <option value="SPEED_CHANGE">Speed Change</option>
+        <option value="SURRENDER">Surrender</option>
+        <option value="LUNGE">Lunge</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Status</label>
+      <select id="ev-status" onchange="loadEvidence()">
+        <option value="">All statuses</option>
+        <option value="PENDING">Pending</option>
+        <option value="CONFIRMED">Confirmed</option>
+        <option value="FALSE_ALARM">False Alarm</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>From date</label>
+      <input type="date" id="ev-from" onchange="loadEvidence()"/>
+    </div>
+    <div class="form-group">
+      <label>To date</label>
+      <input type="date" id="ev-to" onchange="loadEvidence()"/>
+    </div>
+    <button class="btn-secondary" onclick="clearEvFilters()">Clear</button>
+  </div>
+
+  <!-- Inline video player (hidden until a card is clicked) -->
+  <div id="ev-player-wrap" style="display:none; margin-bottom:1.5rem;">
+    <div style="background:#000; border-radius:var(--radius-lg); overflow:hidden; border:1px solid var(--border);">
+      <video id="ev-video" controls preload="metadata"
+             style="width:100%; max-height:400px; display:block;">
+        Your browser does not support HTML5 video.
+      </video>
+    </div>
+    <div id="ev-video-meta"
+         style="margin-top:8px; padding:10px 14px; background:var(--bg2);
+                border:1px solid var(--border); border-radius:var(--radius);
+                font-size:12px; color:var(--muted); display:flex; gap:20px; flex-wrap:wrap;">
+    </div>
+    <button class="btn-secondary" style="margin-top:8px;" onclick="closePlayer()">✕ Close player</button>
+  </div>
+
+  <!-- Stats row -->
+  <div id="ev-stats" class="stats-row" style="margin-bottom:1rem;"></div>
+
+  <!-- Card grid -->
+  <div id="ev-list"
+       style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px;">
+    <p class="loading-text">Loading evidence…</p>
+  </div>
+
+  <!-- Empty state -->
+  <div id="ev-empty" style="display:none; text-align:center; padding:3rem 0;">
+    <div style="font-size:2rem; margin-bottom:8px;">📂</div>
+    <p style="color:var(--muted); font-size:13px;">No incidents found for these filters.</p>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════
+     TAB 5 — Audit Log
+════════════════════════════════════════════════ -->
+<div id="tab-audit" class="tab-content">
+  <h4 style="margin-bottom:1rem;">📋 Recent System Actions</h4>
+  <div id="audit-content">
+    <p class="loading-text">Loading audit log…</p>
+  </div>
+</div>
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+/* ── Tab switching ── */
+function showTab(name, btn) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  if (btn) btn.classList.add('active');
+  else document.querySelector(`[onclick*="'${name}'"]`)?.classList.add('active');
+
+  if (name === 'evidence') loadEvidence();
+  if (name === 'audit')    loadAudit();
+}
+
+/* ── Users ── */
+function toggleUser(username, active) {
+  fetch('/api/users/toggle', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({username, active})
+  }).then(r => r.json()).then(d => {
+    if (d.ok) location.reload();
+    else alert(d.error);
+  });
+}
+
+function addUser() {
+  const data = {
+    username:  document.getElementById('new-username').value.trim(),
+    full_name: document.getElementById('new-fullname').value.trim(),
+    role:      document.getElementById('new-role').value,
+    password:  document.getElementById('new-password').value,
+    email:     document.getElementById('new-email').value.trim(),
+  };
+  const msg = document.getElementById('add-user-msg');
+  if (!data.username || !data.full_name || !data.password) {
+    msg.textContent = 'Username, full name and password are required.';
+    msg.className = 'form-msg error'; return;
+  }
+  if (data.password.length < 8) {
+    msg.textContent = 'Password must be at least 8 characters.';
+    msg.className = 'form-msg error'; return;
+  }
+  fetch('/api/users/add', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      msg.textContent = '✅ Account created!';
+      msg.className = 'form-msg success';
+      setTimeout(() => location.reload(), 1000);
+    } else {
+      msg.textContent = d.error;
+      msg.className = 'form-msg error';
+    }
+  });
+}
+
+/* ── Evidence viewer ── */
+let _allIncidents = [];
+
+function loadEvidence() {
+  const type   = document.getElementById('ev-type').value;
+  const status = document.getElementById('ev-status').value;
+  const from   = document.getElementById('ev-from').value;
+  const to     = document.getElementById('ev-to').value;
+
+  const params = new URLSearchParams();
+  if (type)   params.set('type',   type);
+  if (status) params.set('status', status);
+  if (from)   params.set('from',   from);
+  if (to)     params.set('to',     to);
+
+  document.getElementById('ev-list').innerHTML =
+    '<p class="loading-text">Loading evidence…</p>';
+  document.getElementById('ev-empty').style.display = 'none';
+
+  fetch('/api/incidents?' + params)
+    .then(r => r.json())
+    .then(incidents => {
+      _allIncidents = incidents;
+      renderEvStats(incidents);
+      renderEvCards(incidents);
+    })
+    .catch(() => {
+      document.getElementById('ev-list').innerHTML =
+        '<p style="color:var(--danger);font-size:13px;">Failed to load incidents. Check server logs.</p>';
+    });
+}
+
+function renderEvStats(incidents) {
+  const total     = incidents.length;
+  const confirmed = incidents.filter(i => i.review_status === 'CONFIRMED').length;
+  const pending   = incidents.filter(i => !i.review_status || i.review_status === 'PENDING').length;
+  const high      = incidents.filter(i => (i.threat_score || 0) >= 70).length;
+
+  document.getElementById('ev-stats').innerHTML = `
+    <div class="stat-card">
+      <span class="stat-label">Total incidents</span>
+      <span class="stat-value">${total}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Pending review</span>
+      <span class="stat-value warning">${pending}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Confirmed threats</span>
+      <span class="stat-value danger">${confirmed}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">High threat (≥70)</span>
+      <span class="stat-value danger">${high}</span>
+    </div>`;
+}
+
+function renderEvCards(incidents) {
+  const list  = document.getElementById('ev-list');
+  const empty = document.getElementById('ev-empty');
+
+  if (!incidents.length) {
+    list.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  list.innerHTML = incidents.map((inc, idx) => {
+    const folder  = inc._folder || '';
+    const score   = inc.threat_score || 0;
+    const status  = inc.review_status || 'PENDING';
+
+    /* Score colour */
+    const scoreCol = score >= 70 ? 'var(--danger)'
+                   : score >= 40 ? 'var(--warning)'
+                   : 'var(--success)';
+
+    /* Status pill */
+    const statusClass = status === 'CONFIRMED'  ? 'badge-status-confirmed'
+                      : status === 'FALSE_ALARM' ? 'badge-status-false_alarm'
+                      : 'badge-status-pending';
+    const statusLabel = status === 'FALSE_ALARM' ? 'False Alarm' : status;
+
+    /* Try common video filenames */
+    const videoUrl = `/evidence/${folder}/clip.mp4`;
+    const thumbUrl = `/evidence/${folder}/snapshot.jpg`;
+    const ts       = (inc.timestamp || '').slice(0, 19).replace('T', ' ');
+
+    return `
+    <div class="incident-card" style="cursor:pointer; padding:0; overflow:hidden;"
+         onclick="playEvidence(${idx})">
+      <!-- Thumbnail -->
+      <div style="position:relative; background:#111; height:110px;
+                  display:flex; align-items:center; justify-content:center;">
+        <img src="${thumbUrl}" alt="snapshot"
+             style="width:100%; height:110px; object-fit:cover; display:block;"
+             onerror="this.style.display='none'">
+        <!-- Play overlay -->
+        <div style="position:absolute; inset:0; display:flex; align-items:center;
+                    justify-content:center; background:rgba(0,0,0,0.3);">
+          <div style="width:34px; height:34px; background:rgba(0,0,0,0.65);
+                      border-radius:50%; display:flex; align-items:center;
+                      justify-content:center; font-size:14px; border:1px solid rgba(255,255,255,0.2);">▶</div>
+        </div>
+        <!-- Score badge -->
+        <div style="position:absolute; top:6px; right:6px; background:var(--bg);
+                    border:1px solid ${scoreCol}; color:${scoreCol};
+                    font-size:10px; font-weight:600; padding:2px 7px;
+                    border-radius:999px;">${score}</div>
+      </div>
+      <!-- Meta -->
+      <div style="padding:10px 12px;">
+        <div style="font-size:12px; font-weight:600; margin-bottom:3px;">
+          <span class="badge-type">${inc.detection_type || 'UNKNOWN'}</span>
+        </div>
+        <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">${ts}</div>
+        <span class="${statusClass}" style="font-size:11px;">${statusLabel}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function playEvidence(idx) {
+  const inc    = _allIncidents[idx];
+  const folder = inc._folder || '';
+
+  /* Try .mp4 first — if it 404s the browser shows an error in the player */
+  const videoUrl = `/evidence/${folder}/clip.mp4`;
+
+  const wrap  = document.getElementById('ev-player-wrap');
+  const video = document.getElementById('ev-video');
+  const meta  = document.getElementById('ev-video-meta');
+
+  wrap.style.display = 'block';
+  video.src = videoUrl;
+  video.load();
+  video.play().catch(() => {});   /* autoplay blocked in some browsers — user can press play */
+
+  const score  = inc.threat_score || 0;
+  const scoreCol = score >= 70 ? 'var(--danger)'
+                 : score >= 40 ? 'var(--warning)'
+                 : 'var(--success)';
+  meta.innerHTML = `
+    <span><strong style="color:var(--text);">ID:</strong> ${inc.incident_id || '—'}</span>
+    <span><strong style="color:var(--text);">Type:</strong> ${inc.detection_type || '—'}</span>
+    <span><strong style="color:var(--text);">Time:</strong> ${(inc.timestamp||'').slice(0,19).replace('T',' ')}</span>
+    <span><strong style="color:var(--text);">Score:</strong> <span style="color:${scoreCol};">${score}</span></span>
+    <span><strong style="color:var(--text);">Status:</strong> ${inc.review_status || 'PENDING'}</span>`;
+
+  wrap.scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+function closePlayer() {
+  const video = document.getElementById('ev-video');
+  video.pause();
+  video.src = '';
+  document.getElementById('ev-player-wrap').style.display = 'none';
+}
+
+function clearEvFilters() {
+  document.getElementById('ev-type').value   = '';
+  document.getElementById('ev-status').value = '';
+  document.getElementById('ev-from').value   = '';
+  document.getElementById('ev-to').value     = '';
+  loadEvidence();
+}
+
+/* ── Audit log ── */
+function loadAudit() {
+  /* /api/incidents is available — for audit we read system state.
+     If you have a dedicated /api/audit endpoint, point this there instead. */
+  const el = document.getElementById('audit-content');
+  fetch('/api/state')
+    .then(r => r.json())
+    .then(state => {
+      const log = state.detection_log || [];
+      if (!log.length) {
+        el.innerHTML = '<p class="muted">No log entries yet.</p>';
+        return;
+      }
+      el.innerHTML = `
+        <div class="audit-list">
+          ${log.map(entry => `
+            <div class="audit-entry">
+              <span style="color:var(--primary); margin-right:10px;">
+                ${typeof entry === 'object' ? entry.time || '' : ''}
+              </span>
+              ${typeof entry === 'object' ? entry.msg || JSON.stringify(entry) : entry}
+            </div>`).join('')}
+        </div>`;
+    })
+    .catch(() => {
+      el.innerHTML = '<p style="color:var(--danger); font-size:13px;">Could not load log.</p>';
+    });
+}
+</script>
+{% endblock %}

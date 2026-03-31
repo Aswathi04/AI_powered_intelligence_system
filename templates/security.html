@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Live Feed — Sentinel AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>🔴 Live Tactical View</h2>
+  <div id="status-banner" class="status-banner secure">✅ SYSTEM SECURE</div>
+</div>
+
+<div class="dashboard-grid">
+
+  <div class="feed-panel">
+    <div class="panel-header">
+      <span>Live Feed</span>
+      <span class="fps-badge" id="fps-badge">-- FPS</span>
+    </div>
+    <div class="video-wrap">
+      <img src="/video_feed" class="video-feed" alt="Live Feed"/>
+    </div>
+  </div>
+
+  <div class="metrics-panel">
+    <div class="panel-header">Active Threats</div>
+
+    <div class="metric-card">
+      <span class="metric-label">People in frame</span>
+      <span class="metric-value" id="m-people">0</span>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Min distance</span>
+      <span class="metric-value" id="m-dist">—</span>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Encirclement</span>
+      <span class="metric-value" id="m-encircle">0%</span>
+    </div>
+    <div class="metric-card">
+      <span class="metric-label">Threat score</span>
+      <span class="metric-value" id="m-score">0</span>
+    </div>
+
+    <hr/>
+    <div class="panel-header">Live Log</div>
+    <div class="live-log" id="live-log">Waiting for events...</div>
+  </div>
+
+</div>
+
+<div class="section-header">
+  <h3>🗂️ Incident Review</h3>
+  <span class="section-hint">Click an incident to review evidence</span>
+</div>
+
+<div id="incident-list" class="incident-list">
+  <p class="loading-text">Loading incidents...</p>
+</div>
+
+<div id="incident-modal" class="modal hidden">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <h3 id="modal-title">Incident Details</h3>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+<script>
+  initAlertStream();
+  loadIncidents();
+</script>
+{% endblock %}

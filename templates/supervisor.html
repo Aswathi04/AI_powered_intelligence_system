@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}Supervisor Panel — Sentinel AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2>📊 Supervisor Panel</h2>
+</div>
+
+<!-- Stats row -->
+<div class="stats-row">
+  <div class="stat-card">
+    <span class="stat-label">Total Incidents</span>
+    <span class="stat-value">{{ total }}</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">Confirmed Threats</span>
+    <span class="stat-value danger">{{ by_status.CONFIRMED }}</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">False Alarms</span>
+    <span class="stat-value">{{ by_status.FALSE_ALARM }}</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">Pending Review</span>
+    <span class="stat-value warning">{{ by_status.PENDING }}</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">Accuracy</span>
+    <span class="stat-value success">
+      {% if (by_status.CONFIRMED + by_status.FALSE_ALARM) > 0 %}
+        {{ ((by_status.CONFIRMED / (by_status.CONFIRMED + by_status.FALSE_ALARM)) * 100) | int }}%
+      {% else %}N/A{% endif %}
+    </span>
+  </div>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="showTab('health')">🖥️ System Health</button>
+  <button class="tab-btn" onclick="showTab('reports')">📄 Reports</button>
+  <button class="tab-btn" onclick="showTab('audit')">🔍 Audit Log</button>
+</div>
+
+<!-- TAB: System Health -->
+<div id="tab-health" class="tab-content active">
+  <div class="health-grid">
+    <div class="health-card">
+      <h4>Alerts by Type</h4>
+      {% for type, count in by_type.items() %}
+      <div class="bar-row">
+        <span class="bar-label">{{ type }}</span>
+        <div class="bar-wrap">
+          <div class="bar-fill" style="width: {{ ((count / total) * 100) | int if total > 0 else 0 }}%"></div>
+        </div>
+        <span class="bar-count">{{ count }}</span>
+      </div>
+      {% else %}
+      <p class="muted">No incidents yet.</p>
+      {% endfor %}
+    </div>
+
+    <div class="health-card">
+      <h4>Live System Metrics</h4>
+      <div class="metric-row">
+        <span>Detector FPS</span>
+        <span id="sv-fps" class="metric-val">--</span>
+      </div>
+      <div class="metric-row">
+        <span>People in frame</span>
+        <span id="sv-people" class="metric-val">--</span>
+      </div>
+      <div class="metric-row">
+        <span>Active alerts</span>
+        <span id="sv-alerts" class="metric-val">--</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB: Reports -->
+<div id="tab-reports" class="tab-content">
+  <h4>Generate Incident Report</h4>
+  <div class="form-grid">
+    <div class="form-group">
+      <label>From Date</label>
+      <input type="date" id="rpt-from"/>
+    </div>
+    <div class="form-group">
+      <label>To Date</label>
+      <input type="date" id="rpt-to"/>
+    </div>
+  </div>
+  <div style="display:flex; gap:12px; margin-top:1rem;">
+    <button class="btn-primary" onclick="loadReport()">🔍 Generate Report</button>
+    <button class="btn-secondary" onclick="exportReport()">⬇️ Download CSV</button>
+  </div>
+
+  <div id="report-results" style="margin-top:1.5rem;"></div>
+</div>
+
+<!-- TAB: Audit Log -->
+<div id="tab-audit" class="tab-content">
+  <h4>Audit Log</h4>
+  <div class="inline-form" style="margin-bottom:1rem;">
+    <input type="text" id="audit-filter" placeholder="Filter by username..."/>
+    <button class="btn-secondary" onclick="loadAudit()">Filter</button>
+  </div>
+  <div id="audit-list" class="audit-list">
+    <p class="loading-text">Loading audit log...</p>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'audit') loadAudit();
+}
+
+// Live metrics update
+setInterval(() => {
+  fetch('/api/state').then(r => r.json()).then(d => {
+    document.getElementById('sv-fps').textContent    = d.fps || '--';
+    document.getElementById('sv-people').textContent = d.people_count || 0;
+    document.getElementById('sv-alerts').textContent =
+      d.active_alerts && d.active_alerts.length
+        ? d.active_alerts.join(', ')
+        : 'None';
+  });
+}, 2000);
+
+function loadReport() {
+  const from = document.getElementById('rpt-from').value.replace(/-/g,'');
+  const to   = document.getElementById('rpt-to').value.replace(/-/g,'');
+  fetch(`/api/incidents?from=${from}&to=${to}`)
+    .then(r => r.json())
+    .then(incidents => {
+      const el = document.getElementById('report-results');
+      if (!incidents.length) {
+        el.innerHTML = '<p class="muted">No incidents in this range.</p>';
+        return;
+      }
+      let html = `<p><strong>${incidents.length} incidents found</strong></p>`;
+      html += '<table class="data-table"><thead><tr><th>ID</th><th>Type</th><th>Time</th><th>Score</th><th>Status</th></tr></thead><tbody>';
+      incidents.forEach(i => {
+        const statusClass = i.review_status === 'CONFIRMED' ? 'danger' : i.review_status === 'FALSE_ALARM' ? 'muted' : 'warning';
+        html += `<tr>
+          <td>${i.incident_id}</td>
+          <td>${i.detection_type}</td>
+          <td>${(i.timestamp||'').substring(0,19)}</td>
+          <td>${i.threat_score}/100</td>
+          <td><span class="badge-${statusClass}">${i.review_status}</span></td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      el.innerHTML = html;
+    });
+}
+
+function exportReport() {
+  const from = document.getElementById('rpt-from').value.replace(/-/g,'');
+  const to   = document.getElementById('rpt-to').value.replace(/-/g,'');
+  window.location.href = `/api/report/export?from=${from}&to=${to}`;
+}
+
+function loadAudit() {
+  const filter = document.getElementById('audit-filter').value.trim();
+  fetch(`/api/incidents`).then(() => {});
+  // Fetch audit from dedicated endpoint
+  fetch('/api/state').then(r => r.json()).then(() => {
+    fetch('/api/incidents').then(r => r.json()).then(data => {
+      const el = document.getElementById('audit-list');
+      el.innerHTML = '<p class="muted">Audit log available in sentinel.db — export via admin panel.</p>';
+    });
+  });
+}
+</script>
+{% endblock %}

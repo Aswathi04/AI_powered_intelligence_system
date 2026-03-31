@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sentinel AI — Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
+</head>
+<body class="login-body">
+
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-header">
+      <div class="login-icon">🛡️</div>
+      <h1>Sentinel AI</h1>
+      <p>Security Operations Center</p>
+    </div>
+
+    <hr class="login-divider"/>
+
+    {% if error %}
+    <div class="alert alert-danger">❌ {{ error }}</div>
+    {% endif %}
+
+    <form method="POST" action="/login" class="login-form">
+      <label>Username</label>
+      <input type="text" name="username" placeholder="Enter your username"
+             autocomplete="username" required autofocus/>
+
+      <label>Password</label>
+      <input type="password" name="password" placeholder="Enter your password"
+             autocomplete="current-password" required/>
+
+      <button type="submit" class="btn-primary btn-full">
+        🔐 Login
+      </button>
+    </form>
+
+    <details class="login-hint">
+      <summary>🔑 Default credentials</summary>
+      <table class="hint-table">
+        <tr><th>Role</th><th>Username</th><th>Password</th></tr>
+        <tr><td>Security</td><td><code>security_officer</code></td><td><code>Security@123</code></td></tr>
+        <tr><td>Admin</td><td><code>admin</code></td><td><code>Admin@123</code></td></tr>
+        <tr><td>Supervisor</td><td><code>supervisor</code></td><td><code>Supervisor@123</code></td></tr>
+      </table>
+      <p class="hint-warning">⚠️ Change passwords before deployment.</p>
+    </details>
+
+    <p class="login-footer">Sentinel AI v1.0 · Unauthorized access is prohibited</p>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+{% block title %}Incident History — Sentinel AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Incident History</h1>
+  <div class="filter-bar">
+    <input type="date" id="from-date" placeholder="From">
+    <input type="date" id="to-date"   placeholder="To">
+    <select id="filter-status">
+      <option value="">All statuses</option>
+      <option value="PENDING">Pending</option>
+      <option value="CONFIRMED">Confirmed</option>
+      <option value="FALSE_ALARM">False alarm</option>
+    </select>
+    <select id="filter-type">
+      <option value="">All types</option>
+      <option value="PROXIMITY">Proximity</option>
+      <option value="SPEED CHANGE">Speed change</option>
+      <option value="ENCIRCLEMENT">Encirclement</option>
+      <option value="LOITERING">Loitering</option>
+      <option value="TAILGATING">Tailgating</option>
+    </select>
+    <button onclick="loadIncidents()">Filter</button>
+  </div>
+</div>
+
+<div id="evidence-modal" class="modal-backdrop" style="display:none"
+     onclick="closeModal(event)">
+  <div class="modal-card" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span id="modal-title">Evidence</span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <video id="evidence-video"
+             controls autoplay muted preload="metadata"
+             style="width:100%;border-radius:6px;background:#000;display:none">
+        Your browser does not support video playback.
+      </video>
+      <img id="evidence-thumb"
+           style="width:100%;border-radius:6px;display:none"
+           alt="Incident thumbnail">
+      <div id="evidence-meta" class="meta-grid"></div>
+    </div>
+    {% if user.role == 'security' or user.role == 'administrator' %}
+    <div class="modal-footer">
+      <input id="review-note" type="text" placeholder="Review note…" style="flex:1">
+      <button class="btn-confirm"
+              onclick="submitReview('CONFIRMED')">Confirm threat</button>
+      <button class="btn-dismiss"
+              onclick="submitReview('FALSE_ALARM')">False alarm</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div id="incident-grid" class="incident-grid">
+  <p class="loading-msg">Loading incidents…</p>
+</div>
+
+<style>
+/* (Your existing CSS from history.html stays exactly the same) */
+.page-header { padding: 1.5rem 2rem 0; }
+.page-header h1 { font-size: 1.4rem; font-weight: 500; margin: 0 0 1rem; }
+.filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.filter-bar input, .filter-bar select { font-size: 13px; padding: 6px 10px; }
+.filter-bar button { padding: 6px 16px; font-size: 13px; cursor: pointer; }
+.incident-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; padding: 0 2rem 2rem; }
+.incident-card { border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); background: var(--color-background-primary); overflow: hidden; cursor: pointer; transition: border-color .15s; }
+.incident-card:hover { border-color: var(--color-border-primary); }
+.card-thumb { position: relative; width: 100%; aspect-ratio: 4/3; background: #111; overflow: hidden; }
+.card-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.card-thumb .play-icon { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.35); font-size: 36px; color: #fff; opacity: 0; transition: opacity .15s; }
+.incident-card:hover .play-icon { opacity: 1; }
+.card-thumb .no-thumb { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #555; font-size: 13px; }
+.card-body { padding: 12px 14px; }
+.card-type { font-size: 11px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; display: inline-block; margin-bottom: 6px; }
+.type-PROXIMITY     { background:#fee2e2; color:#991b1b; }
+.type-SPEED_CHANGE  { background:#fef9c3; color:#854d0e; }
+.type-ENCIRCLEMENT  { background:#ede9fe; color:#4c1d95; }
+.type-OTHER         { background:#f3f4f6; color:#374151; }
+.card-id   { font-size: 13px; font-weight: 500; margin: 0 0 2px; }
+.card-meta { font-size: 12px; color: var(--color-text-secondary); }
+.card-footer { border-top: 0.5px solid var(--color-border-tertiary); padding: 8px 14px; display: flex; align-items: center; justify-content: space-between; }
+.score-badge { font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 4px; }
+.score-high   { background:#fee2e2; color:#991b1b; }
+.score-medium { background:#fef9c3; color:#854d0e; }
+.score-low    { background:#dcfce7; color:#14532d; }
+.status-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; }
+.status-PENDING     { background:#f3f4f6; color:#374151; }
+.status-CONFIRMED   { background:#fee2e2; color:#991b1b; }
+.status-FALSE_ALARM { background:#dcfce7; color:#14532d; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; padding: 1rem; }
+.modal-card { background: var(--color-background-primary); border-radius: var(--border-radius-lg); border: 0.5px solid var(--color-border-secondary); width: 100%; max-width: 680px; display: flex; flex-direction: column; max-height: 90vh; overflow: hidden; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 0.5px solid var(--color-border-tertiary); font-weight: 500; font-size: 15px; }
+.modal-close { background: none; border: none; cursor: pointer; font-size: 16px; color: var(--color-text-secondary); padding: 2px 6px; }
+.modal-body { padding: 16px 18px; overflow-y: auto; }
+.modal-footer { padding: 12px 18px; border-top: 0.5px solid var(--color-border-tertiary); display: flex; gap: 8px; align-items: center; }
+.btn-confirm { padding: 7px 14px; font-size: 13px; cursor: pointer; background: #fee2e2; color: #991b1b; border: 0.5px solid #fca5a5; border-radius: 6px; }
+.btn-dismiss { padding: 7px 14px; font-size: 13px; cursor: pointer; background: #dcfce7; color: #14532d; border: 0.5px solid #86efac; border-radius: 6px; }
+.meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin-top: 14px; font-size: 13px; }
+.meta-item label { display: block; font-size: 11px; color: var(--color-text-secondary); margin-bottom: 2px; }
+.meta-item span { font-weight: 500; }
+.loading-msg { color: var(--color-text-secondary); padding: 2rem; }
+</style>
+
+<script>
+let _currentReportPath = "";
+
+async function loadIncidents() {
+  const from   = document.getElementById("from-date").value;
+  const to     = document.getElementById("to-date").value;
+  const status = document.getElementById("filter-status").value;
+  const type   = document.getElementById("filter-type").value;
+
+  const params = new URLSearchParams();
+  if (from)   params.set("from",   from);
+  if (to)     params.set("to",     to);
+  if (status) params.set("status", status);
+  if (type)   params.set("type",   type);
+
+  const resp = await fetch("/api/incidents?" + params.toString());
+  const incidents = await resp.json();
+
+  const grid = document.getElementById("incident-grid");
+
+  if (!incidents.length) {
+    grid.innerHTML = '<p class="loading-msg">No incidents found.</p>';
+    return;
+  }
+
+  grid.innerHTML = incidents.map(inc => {
+    const typeKey = (inc.detection_type || "OTHER").replace(" ", "_");
+    const ts      = (inc.timestamp || "").slice(0, 19).replace("T", " ");
+    const score   = inc.threat_score || 0;
+    const scoreCls = score >= 70 ? "score-high"
+                   : score >= 40 ? "score-medium" : "score-low";
+    const statusCls = "status-" + (inc.review_status || "PENDING");
+
+    // Clean folder path for routing
+    const folder = (inc._folder || "").replace("evidence/incidents/", "");
+    const thumbPath = folder 
+      ? `/evidence/${folder}/${inc.thumbnail || "thumbnail.jpg"}`
+      : "";
+
+    const hasVideo  = !!(inc.evidence_video);
+    const hasThumb  = !!(inc.thumbnail);
+
+    const thumbHtml = hasThumb && thumbPath
+      ? `<img src="${thumbPath}" alt="Incident thumbnail"
+              onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+      : "";
+
+    const noThumbHtml = `<div class="no-thumb" style="${hasThumb ? 'display:none' : ''}">No thumbnail</div>`;
+    const playIcon = hasVideo ? `<div class="play-icon">&#9654;</div>` : "";
+
+    // Encode incident object safely for the onclick handler
+    const incJson = JSON.stringify(inc).replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+
+    return `
+    <div class="incident-card" onclick="openEvidence(${incJson})">
+      <div class="card-thumb">
+        ${thumbHtml}${noThumbHtml}${playIcon}
+      </div>
+      <div class="card-body">
+        <span class="card-type type-${typeKey}">${inc.detection_type || "UNKNOWN"}</span>
+        <p class="card-id">${inc.incident_id || "—"}</p>
+        <p class="card-meta">${ts}</p>
+      </div>
+      <div class="card-footer">
+        <span class="score-badge ${scoreCls}">Score ${score}/100</span>
+        <span class="status-badge ${statusCls}">${inc.review_status || "PENDING"}</span>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function openEvidence(inc) {
+  // FIX: _folder is already a clean relative path from the API; use as-is
+  const folder = inc._folder || "";
+  _currentReportPath = folder ? `${folder}/report.json` : "";
+
+  document.getElementById("modal-title").textContent =
+    `${inc.incident_id} — ${inc.detection_type}`;
+
+  const base = folder ? `/evidence/${folder}` : "";
+
+  // Video element
+  const vid = document.getElementById("evidence-video");
+  const img = document.getElementById("evidence-thumb");
+
+  vid.style.display = "none";
+  img.style.display = "none";
+
+  if (inc.evidence_video && base) {
+    vid.src = `${base}/${inc.evidence_video}`;
+    vid.style.display = "block";
+    vid.load();
+    vid.play().catch(e => console.log("Auto-play prevented", e));
+  } else if (inc.thumbnail && base) {
+    img.src = `${base}/${inc.thumbnail}`;
+    img.style.display = "block";
+  }
+
+  // Meta grid
+  const m = inc.metrics || {};
+  const metas = [
+    ["Threat score",   `${inc.threat_score || 0}/100`],
+    ["Status",         inc.review_status || "PENDING"],
+    ["Pre-event",      `${inc.pre_event_s || "—"}s`],
+    ["Post-event",     `${inc.post_event_s || "—"}s`],
+    ...Object.entries(m).map(([k, v]) => [k.replace(/_/g, " "), v]),
+    inc.reviewed_by ? ["Reviewed by", inc.reviewed_by] : null,
+    inc.review_note ? ["Note",        inc.review_note] : null,
+  ].filter(Boolean);
+
+  document.getElementById("evidence-meta").innerHTML =
+    metas.map(([label, val]) =>
+      `<div class="meta-item">
+         <label>${label}</label>
+         <span>${val}</span>
+       </div>`
+    ).join("");
+
+  document.getElementById("evidence-modal").style.display = "flex";
+}
+
+function closeModal(e) {
+  if (e && e.target !== document.getElementById("evidence-modal")) return;
+  document.getElementById("evidence-modal").style.display = "none";
+  const vid = document.getElementById("evidence-video");
+  vid.pause();
+  vid.src = "";
+}
+
+async function submitReview(status) {
+  const noteInput = document.getElementById("review-note");
+  const note = noteInput ? noteInput.value.trim() : "";
+  
+  if (!_currentReportPath) {
+      alert("Error: Cannot find report path.");
+      return;
+  }
+
+  const resp = await fetch("/api/incident/review", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      report_path: _currentReportPath,
+      status, note
+    })
+  });
+  const data = await resp.json();
+  if (data.ok) {
+    closeModal();
+    loadIncidents();
+    if(noteInput) noteInput.value = ""; // Clear the input
+  } else {
+    alert(data.error || "Review failed.");
+  }
+}
+
+// Load on page open
+loadIncidents();
+</script>
+{% endblock %}
