@@ -339,10 +339,6 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 4px; font-size: 
 .hint-warning { color: var(--warning); font-size: 11px; margin-top: 8px; }
 .login-footer { text-align: center; color: var(--muted); font-size: 11px; margin-top: 1.5rem; }
 
-/* ── Recipient list ── */
-.recipient-list { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-bottom: 1rem; }
-.recipient-list li { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); }
-
 /* ── Alerts ── */
 .alert { padding: 10px 14px; border-radius: var(--radius); margin-bottom: 1rem; font-size: 13px; }
 .alert-danger { background: #450a0a; color: #f87171; border: 1px solid #7f1d1d; }

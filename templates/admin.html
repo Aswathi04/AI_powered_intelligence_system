@@ -326,36 +326,6 @@
     background: rgba(16, 185, 129, 0.1);
   }
 
-  /* Recipients list */
-  .recipient-list {
-    list-style: none;
-    background: var(--color-bg-secondary);
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    overflow: hidden;
-  }
-
-  .recipient-list li {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem;
-    border-bottom: 1px solid var(--color-border);
-    transition: background 0.2s ease;
-  }
-
-  .recipient-list li:hover {
-    background: rgba(59, 130, 246, 0.05);
-  }
-
-  .recipient-list li:last-child {
-    border-bottom: none;
-  }
-
-  .recipient-list li form {
-    display: inline;
-  }
-
   /* Evidence viewer */
   .filter-bar {
     background: var(--color-bg-secondary);
@@ -569,7 +539,6 @@
     <div class="tab-bar">
       <button class="tab-btn active" onclick="showTab('config', this)">🎛️ Configuration</button>
       <button class="tab-btn" onclick="showTab('users', this)">👥 Users</button>
-      <button class="tab-btn" onclick="showTab('recipients', this)">📱 Recipients</button>
       <button class="tab-btn" onclick="showTab('evidence', this)">🎥 Evidence</button>
       <button class="tab-btn" onclick="showTab('audit', this)">📋 Audit Log</button>
     </div>
@@ -631,11 +600,6 @@
             <label>Skip Frames</label>
             <input type="number" name="skip_frames" min="1" max="5" value="{{ config.SKIP_FRAMES }}"/>
             <span class="form-hint">Higher = faster, less accurate</span>
-          </div>
-          <div class="form-group">
-            <label>GSM Port</label>
-            <input type="text" name="gsm_port" value="{{ config.GSM_PORT }}"/>
-            <span class="form-hint">Windows: COM3 | Linux: /dev/ttyUSB0</span>
           </div>
         </div>
       </div>
@@ -756,46 +720,6 @@
       </div>
       <button type="button" class="btn-primary" onclick="addUser()">➕ Create Account</button>
       <div id="add-user-msg" class="form-msg" style="display: none;"></div>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════════════════════════════════════════
-       TAB 3 — SMS RECIPIENTS
-  ═════════════════════════════════════════════════════════════ -->
-  <div id="tab-recipients" class="tab-content">
-    <div class="form-section">
-      <h4>📱 SMS Alert Recipients</h4>
-      <p>These numbers receive an SMS when the threat score exceeds 70.</p>
-
-      {% set numbers = config.ALERT_NUMBERS %}
-      {% if numbers %}
-      <ul class="recipient-list">
-        {% for num in numbers %}
-        <li>
-          <span>📞 {{ num }}</span>
-          <form method="POST" action="/api/recipients" style="display: inline;">
-            <input type="hidden" name="action" value="remove"/>
-            <input type="hidden" name="number" value="{{ num }}"/>
-            <button type="submit" class="btn-sm btn-danger">Remove</button>
-          </form>
-        </li>
-        {% endfor %}
-      </ul>
-      {% else %}
-      <p class="muted">No recipients configured yet.</p>
-      {% endif %}
-    </div>
-
-    <div class="form-section">
-      <h4>➕ Add Recipient</h4>
-      <form method="POST" action="/api/recipients" style="display: flex; gap: 1rem; align-items: flex-end;">
-        <input type="hidden" name="action" value="add"/>
-        <div class="form-group" style="flex: 1; max-width: 300px;">
-          <label>Phone Number</label>
-          <input type="text" name="number" placeholder="+91XXXXXXXXXX" required/>
-        </div>
-        <button type="submit" class="btn-primary">Add Recipient</button>
-      </form>
     </div>
   </div>
 

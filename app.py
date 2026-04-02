@@ -258,7 +258,6 @@ def api_config():
         "ENCIRCLEMENT_DIST": int(data.get("encirclement_dist",  300)),
         "MAX_GAP_THRESHOLD": int(data.get("max_gap_threshold",  200)),
         "MIN_ENCIRCLERS":    int(data.get("min_encirclers",     3)),
-        "GSM_PORT":          data.get("gsm_port",               "COM3"),
         # --- F4: Demo Mode Configuration Support ---
         "DEMO_MODE":         data.get("demo_mode") == "on",
         "DEMO_VIDEO":        data.get("demo_video", "demo_attack.mp4"),
@@ -376,34 +375,6 @@ def api_add_user():
                     "error": "Username already exists" if not ok else ""})
 
 
-@app.route("/api/recipients", methods=["POST"])
-@role_required("administrator")
-def api_recipients():
-    config  = _load_config()
-    action  = request.form.get("action", "")
-    number  = request.form.get("number", "").strip()
-    user    = get_current_user()
-
-    if action == "add" and number:
-        numbers = config.get("ALERT_NUMBERS", [])
-        if number not in numbers:
-            numbers.append(number)
-            config["ALERT_NUMBERS"] = numbers
-            _save_config(config)
-            log_action(user["username"], "CONFIG_CHANGE",
-                       f"Added recipient {number}")
-    elif action == "remove" and number:
-        numbers = config.get("ALERT_NUMBERS", [])
-        if number in numbers:
-            numbers.remove(number)
-            config["ALERT_NUMBERS"] = numbers
-            _save_config(config)
-            log_action(user["username"], "CONFIG_CHANGE",
-                       f"Removed recipient {number}")
-
-    return redirect(url_for("administrator") + "#recipients")
-
-
 @app.route("/api/report/export")
 @role_required("supervisor")
 def api_report_export():
@@ -467,8 +438,7 @@ DEFAULT_CONFIG = {
     "SPEED_THRESHOLD": 2.5, "PROXIMITY_LIMIT": 220,
     "ENCIRCLEMENT_DIST": 300, "MAX_GAP_THRESHOLD": 200,
     "MIN_ENCIRCLERS": 3, "CAMERA_PORT": 0,
-    "CAMERA_LOCATION": "Main Entrance", "GSM_PORT": "COM3",
-    "ALERT_NUMBERS": ["+1234567890"],
+    "CAMERA_LOCATION": "Main Entrance",
     # --- F4 Default Defaults ---
     "DEMO_MODE": False,
     "DEMO_VIDEO": "demo_attack.mp4",

@@ -15,7 +15,7 @@ Permission strings are grouped by feature area:
   INCIDENTS         respond_to_incident
   ANALYTICS         view_analytics
   HISTORY           view_alert_history          ← all 3 roles
-  CONFIGURATION     configure_cameras, set_thresholds, manage_recipients
+  CONFIGURATION     configure_cameras, set_thresholds
   USER MANAGEMENT   manage_users
   SYSTEM            view_system_health, update_models, generate_reports
   AUDIT             view_audit_log
@@ -48,7 +48,6 @@ PERMISSIONS: dict[str, set[str]] = {
         # Configuration and management
         "configure_cameras",          # camera port, resolution, location name
         "set_thresholds",             # proximity limit, speed threshold, etc.
-        "manage_recipients",          # GSM alert phone numbers
         "manage_users",               # add/disable/reset-password for accounts
         "view_analytics",             # read-only stats
         "view_audit_log",             # see who did what and when

@@ -32,7 +32,6 @@ from ultralytics import YOLO
 from tracking.deepsort_tracker import PersonTracker
 from pose.mediapipe_estimator import PoseEstimator
 from logic.threat_scorer import ThreatScorer
-from alerts.gsm_alert import GSMAlert
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +58,6 @@ DEFAULT_SETTINGS = {
     "ENCIRCLEMENT_DIST":  300,
     "MAX_GAP_THRESHOLD":  200,
     "MIN_ENCIRCLERS":     3,
-    "GSM_PORT":           "COM3",
-    "ALERT_NUMBERS":      ["+1234567890"],
 }
 
 
@@ -286,7 +283,6 @@ class Detector:
         self._tracker        = None
         self._pose_estimator = None
         self._threat_scorer  = None
-        self._gsm_alert      = None
 
         self._pos_history    = {}
         self._alert_cooldown = {}
@@ -336,7 +332,6 @@ class Detector:
         self._threat_scorer  = ThreatScorer()
 
         settings = _load_settings()
-        self._gsm_alert = GSMAlert(port=settings.get("GSM_PORT", "COM3"))
         logger.info("AI models loaded. Detection starting.")
 
         frame_count = 0
@@ -388,8 +383,6 @@ class Detector:
         encircle_dist     = int(settings.get("ENCIRCLEMENT_DIST",  300))
         max_gap_threshold = int(settings.get("MAX_GAP_THRESHOLD",  200))
         min_encirclers    = int(settings.get("MIN_ENCIRCLERS",     3))
-        alert_numbers     = settings.get("ALERT_NUMBERS", ["+1234567890"])
-
         current_alerts = []
         min_dist_val   = 999
         debug_gap      = 360
@@ -666,12 +659,6 @@ class Detector:
                         prox_limit)
                     self._alert_cooldown[ckey] = time.time()
                     if p["threat_score"] > 70:
-                        for number in alert_numbers:
-                            self._gsm_alert.send_sms(
-                                number,
-                                f"High threat: {p['threat_reason']}, "
-                                f"Score: {p['threat_score']}")
-
         # --- F5: Per-Detection Confidence Overlay & Box Drawing ---
         for p in current_people:
             color = (0, 255, 0)
