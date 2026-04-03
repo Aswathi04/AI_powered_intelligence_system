@@ -79,18 +79,18 @@ def _load_settings() -> dict:
 _state_lock = threading.Lock()
 
 _shared_state = {
-    "active_alerts":   [],
-    "detection_log":   [],
-    "min_dist_px":     999,
-    "encircle_pct":    0,
-    "encircle_gap":    360,
-    "people_count":    0,
-    "threat_score":    0,
-    "system_secure":   True,
-    "fps":             0,
-    "annotated_frame": None,
+    "active_alerts":      [],
+    "detection_log":      [],
+    "min_dist_px":        999,
+    "encircle_pct":       0,
+    "encircle_gap":       360,
+    "people_count":       0,
+    "threat_score":       0,
+    "system_secure":      True,
+    "fps":                0,
+    "annotated_frame":    None,
+    "surveillance_active": True,   # ← new
 }
-
 
 def get_state() -> dict:
     with _state_lock:
@@ -659,6 +659,7 @@ class Detector:
                         prox_limit)
                     self._alert_cooldown[ckey] = time.time()
                     if p["threat_score"] > 70:
+                        pass 
         # --- F5: Per-Detection Confidence Overlay & Box Drawing ---
         for p in current_people:
             color = (0, 255, 0)

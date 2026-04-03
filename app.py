@@ -2,23 +2,6 @@
 app.py
 
 Flask main application for Sentinel AI.
-
-Routes:
-  GET  /                    → redirect to login or dashboard
-  GET  /login               → login page
-  POST /login               → handle login form
-  GET  /logout              → logout
-  GET  /security            → security officer dashboard
-  GET  /admin               → administrator panel
-  GET  /supervisor          → supervisor panel
-  GET  /video_feed          → MJPEG stream
-  GET  /alerts_stream       → SSE live alerts
-  GET  /api/state           → JSON snapshot of detector state
-  POST /api/config          → save configuration (admin only)
-  POST /api/incident/review → acknowledge or dismiss incident
-  GET  /api/incidents       → list incidents (JSON)
-  GET  /evidence/<path>     → serve evidence snapshots
-  GET  /history             → alert history page
 """
 
 import os
@@ -35,11 +18,7 @@ from functools import wraps
 from auth.db    import init_db, log_action, get_all_users
 from auth.roles import can
 from core.camera   import camera, generate_mjpeg
-from core.detector import detector, get_state
-
-# ---------------------------------------------------------------------------
-# App setup
-# ---------------------------------------------------------------------------
+from core.detector import detector, get_state, _update_state
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SENTINEL_SECRET", "sentinel-ai-secret-2026")
@@ -52,7 +31,6 @@ CONFIG_PATH   = "sentinel_config.json"
 # ---------------------------------------------------------------------------
 
 def login_required(f):
-    """Decorator — redirects to login if not authenticated."""
     @wraps(f)
     def decorated(*args, **kwargs):
         if "user" not in session:
@@ -62,7 +40,6 @@ def login_required(f):
 
 
 def role_required(*roles):
-    """Decorator — returns 403 if user role not in allowed roles."""
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
@@ -88,7 +65,7 @@ def index():
     if "user" not in session:
         return redirect(url_for("login"))
     role = session["user"]["role"]
-    return redirect(url_for(role))   # → /security, /admin, /supervisor
+    return redirect(url_for(role))
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -101,7 +78,7 @@ def login():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "").strip()
 
-        from auth.db   import get_user, verify_password, update_last_login
+        from auth.db import get_user, verify_password, update_last_login
         user = get_user(username)
 
         if user and verify_password(password, user["password_hash"], user["salt"]):
@@ -168,9 +145,10 @@ def supervisor():
 @app.route("/history")
 @login_required
 def history():
-    # --- F3: Load all incidents to populate the replay viewer UI ---
     incidents = _get_all_incidents()
-    return render_template("history.html", user=get_current_user(), incidents=incidents)
+    return render_template("history.html",
+                           user=get_current_user(),
+                           incidents=incidents)
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +158,6 @@ def history():
 @app.route("/video_feed")
 @login_required
 def video_feed():
-    """MJPEG stream — lowest possible lag."""
     return Response(
         generate_mjpeg(camera),
         mimetype="multipart/x-mixed-replace; boundary=frame"
@@ -190,40 +167,35 @@ def video_feed():
 @app.route("/alerts_stream")
 @login_required
 def alerts_stream():
-    """
-    Server-Sent Events stream.
-    Browser connects once, Flask pushes alert updates instantly.
-    No polling needed — browser receives updates within ~50ms.
-    """
     def event_stream():
         last_alerts = []
         while True:
-            state = get_state()
+            state  = get_state()
             alerts = state.get("active_alerts", [])
 
-            # Only push when alerts change
             if alerts != last_alerts:
                 data = json.dumps({
                     "alerts":       alerts,
-                    "secure":       state.get("system_secure", True),
-                    "min_dist":     state.get("min_dist_px",   999),
-                    "encircle_pct": state.get("encircle_pct",  0),
-                    "encircle_gap": state.get("encircle_gap",  360),
-                    "people":       state.get("people_count",  0),
-                    "threat_score": state.get("threat_score",  0),
-                    "fps":          state.get("fps",           0),
-                    "log":          state.get("detection_log", [])[:5],
+                    "secure":       state.get("system_secure",    True),
+                    "min_dist":     state.get("min_dist_px",      999),
+                    "encircle_pct": state.get("encircle_pct",     0),
+                    "encircle_gap": state.get("encircle_gap",     360),
+                    "people":       state.get("people_count",     0),
+                    "threat_score": state.get("threat_score",     0),
+                    "fps":          state.get("fps",              0),
+                    "log":          state.get("detection_log",    [])[:5],
+                    "surveillance": state.get("surveillance_active", True),
                 })
                 yield f"data: {data}\n\n"
                 last_alerts = alerts
 
-            time.sleep(0.2)   # check 5 times per second
+            time.sleep(0.2)
 
     return Response(
         stream_with_context(event_stream()),
         mimetype="text/event-stream",
         headers={
-            "Cache-Control":   "no-cache",
+            "Cache-Control":     "no-cache",
             "X-Accel-Buffering": "no",
         }
     )
@@ -236,14 +208,44 @@ def alerts_stream():
 @app.route("/api/state")
 @login_required
 def api_state():
-    """JSON snapshot of current detector state."""
     return jsonify(get_state())
+
+
+@app.route("/api/surveillance/toggle", methods=["POST"])
+@login_required
+def api_surveillance_toggle():
+    """Start or stop the detector and camera."""
+    state      = get_state()
+    is_running = state.get("surveillance_active", True)
+
+    if is_running:
+        detector.stop()
+        camera.stop()
+        _update_state(surveillance_active=False)
+        log_action(get_current_user()["username"],
+                   "SURVEILLANCE_STOP", "Manual stop via UI")
+        return jsonify({"status": "stopped"})
+    else:
+        camera.start()
+        detector.start(camera)
+        _update_state(surveillance_active=True)
+        log_action(get_current_user()["username"],
+                   "SURVEILLANCE_START", "Manual start via UI")
+        return jsonify({"status": "running"})
+
+
+@app.route("/api/surveillance/status")
+@login_required
+def api_surveillance_status():
+    """Return current surveillance running state."""
+    state = get_state()
+    status = "running" if state.get("surveillance_active", True) else "stopped"
+    return jsonify({"status": status})
 
 
 @app.route("/api/config", methods=["POST"])
 @role_required("administrator")
 def api_config():
-    """Save configuration from admin panel."""
     config = _load_config()
     data   = request.form
 
@@ -258,7 +260,6 @@ def api_config():
         "ENCIRCLEMENT_DIST": int(data.get("encirclement_dist",  300)),
         "MAX_GAP_THRESHOLD": int(data.get("max_gap_threshold",  200)),
         "MIN_ENCIRCLERS":    int(data.get("min_encirclers",     3)),
-        # --- F4: Demo Mode Configuration Support ---
         "DEMO_MODE":         data.get("demo_mode") == "on",
         "DEMO_VIDEO":        data.get("demo_video", "demo_attack.mp4"),
     })
@@ -276,7 +277,6 @@ def api_config():
 @app.route("/api/incident/review", methods=["POST"])
 @role_required("security")
 def api_incident_review():
-    """Acknowledge or dismiss an incident."""
     data        = request.get_json()
     report_path = data.get("report_path", "")
     status      = data.get("status", "")
@@ -312,7 +312,6 @@ def api_incident_review():
 @app.route("/api/incidents")
 @login_required
 def api_incidents():
-    """Return filtered incident list as JSON."""
     from_date = request.args.get("from", "")
     to_date   = request.args.get("to",   "")
     status    = request.args.get("status", "")
@@ -329,9 +328,9 @@ def api_incidents():
         incidents = [i for i in incidents
                      if i.get("detection_type") == inc_type]
 
-    # Remove internal keys (except _folder) before sending
     clean = [{k: v for k, v in i.items()
-              if not k.startswith("_") or k == "_folder"} for i in incidents]
+              if not k.startswith("_") or k == "_folder"}
+             for i in incidents]
     return jsonify(clean)
 
 
@@ -378,7 +377,6 @@ def api_add_user():
 @app.route("/api/report/export")
 @role_required("supervisor")
 def api_report_export():
-    """Download incident report as CSV."""
     import csv, io
     from_date = request.args.get("from", "")
     to_date   = request.args.get("to",   "")
@@ -412,22 +410,19 @@ def api_report_export():
         output.getvalue(),
         mimetype="text/csv",
         headers={"Content-Disposition":
-                 f"attachment; filename=sentinel_report.csv"}
+                 "attachment; filename=sentinel_report.csv"}
     )
 
 
-# Replace this block in app.py
 @app.route("/evidence/<path:filename>")
 @login_required
 def evidence(filename):
-    """Serve evidence files — images AND video with range request support."""
     file_path = os.path.join(EVIDENCE_ROOT, filename)
     if not os.path.exists(file_path):
         return "File not found", 404
-
-    # Use send_file with conditional=True to enable range requests (needed for video seeking)
     from flask import send_file
     return send_file(file_path, conditional=True)
+
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -439,10 +434,10 @@ DEFAULT_CONFIG = {
     "ENCIRCLEMENT_DIST": 300, "MAX_GAP_THRESHOLD": 200,
     "MIN_ENCIRCLERS": 3, "CAMERA_PORT": 0,
     "CAMERA_LOCATION": "Main Entrance",
-    # --- F4 Default Defaults ---
     "DEMO_MODE": False,
     "DEMO_VIDEO": "demo_attack.mp4",
 }
+
 
 def _load_config():
     if os.path.exists(CONFIG_PATH):
@@ -453,16 +448,17 @@ def _load_config():
             pass
     return DEFAULT_CONFIG.copy()
 
+
 def _save_config(config):
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=4)
+
 
 def _get_all_incidents(from_date=None, to_date=None):
     incidents = []
     if not os.path.exists(EVIDENCE_ROOT):
         return incidents
-    
-    # We walk the directories to extract the incident logic
+
     for day_folder in sorted(os.listdir(EVIDENCE_ROOT), reverse=True):
         if from_date and day_folder < from_date: continue
         if to_date   and day_folder > to_date:   continue
@@ -474,15 +470,12 @@ def _get_all_incidents(from_date=None, to_date=None):
             try:
                 with open(json_path) as f:
                     data = json.load(f)
-                
-                # We need to construct the URL path for F3 to easily request the thumbnail/video
-                url_path = f"{day_folder}/{inc_folder}"
-                data["_folder"] = url_path 
-                
+                data["_folder"] = f"{day_folder}/{inc_folder}"
                 incidents.append(data)
             except Exception:
                 pass
     return incidents
+
 
 def _count_by_type(incidents):
     counts = {}
@@ -490,6 +483,7 @@ def _count_by_type(incidents):
         t = i.get("detection_type", "UNKNOWN")
         counts[t] = counts.get(t, 0) + 1
     return counts
+
 
 def _count_by_status(incidents):
     counts = {"PENDING": 0, "CONFIRMED": 0, "FALSE_ALARM": 0}
@@ -504,10 +498,7 @@ def _count_by_status(incidents):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Initialise database
     init_db()
-
-    # Start camera and detector
     camera.start()
     detector.start(camera)
 
@@ -517,7 +508,7 @@ if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=5000,
-        debug=False,      # Never True in production — breaks threads
-        threaded=True,    # Allows concurrent requests
-        use_reloader=False  # Prevents double-starting threads
+        debug=False,
+        threaded=True,
+        use_reloader=False
     )
