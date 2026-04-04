@@ -32,6 +32,7 @@ from ultralytics import YOLO
 from tracking.deepsort_tracker import PersonTracker
 from pose.mediapipe_estimator import PoseEstimator
 from logic.threat_scorer import ThreatScorer
+from alerts.twilio_alert import TwilioAlert
 
 logger = logging.getLogger(__name__)
 
@@ -283,6 +284,7 @@ class Detector:
         self._tracker        = None
         self._pose_estimator = None
         self._threat_scorer  = None
+        self._twilio_alert   = None
 
         self._pos_history    = {}
         self._alert_cooldown = {}
@@ -332,6 +334,11 @@ class Detector:
         self._threat_scorer  = ThreatScorer()
 
         settings = _load_settings()
+        self._twilio_alert = TwilioAlert(
+            account_sid=settings.get("TWILIO_SID", ""),
+            auth_token=settings.get("TWILIO_TOKEN", ""),
+            from_number=settings.get("TWILIO_FROM", "")
+        )
         logger.info("AI models loaded. Detection starting.")
 
         frame_count = 0
@@ -491,10 +498,19 @@ class Detector:
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
                     prox_key = f"prox_{min(p1['id'], p2['id'])}_{max(p1['id'], p2['id'])}"
                     if time.time() - self._alert_cooldown.get(prox_key, 0) > 3:
-                        self._trigger_incident(
+                        incident_id = self._trigger_incident(
                             frame, "PROXIMITY",
                             {"distance_px": int(dist)},
                             prox_limit)
+                        
+                        if self._twilio_alert:
+                            alert_numbers = settings.get("ALERT_NUMBERS", [])
+                            threat_score = int(min(100, max(p1.get("threat_score", 0), p2.get("threat_score", 0))))
+                            self._twilio_alert.send_alert(
+                                alert_numbers, "PROXIMITY", f"INCIDENT_{incident_id:03d}",
+                                threat_score, settings.get("CAMERA_LOCATION", "Main Entrance")
+                            )
+                        
                         self._alert_cooldown[prox_key] = time.time()
 
                     if key not in self._proximity_timers:
@@ -517,10 +533,19 @@ class Detector:
 
                         cooldown_key = f"loiter_{min(p1['id'], p2['id'])}_{max(p1['id'], p2['id'])}"
                         if time.time() - self._alert_cooldown.get(cooldown_key, 0) > 20:
-                            self._trigger_incident(
+                            incident_id = self._trigger_incident(
                                 frame, "LOITERING",
                                 {"duration_s": int(elapsed), "distance_px": int(dist)},
                                 prox_limit)
+                            
+                            if self._twilio_alert:
+                                alert_numbers = settings.get("ALERT_NUMBERS", [])
+                                threat_score = int(loiterer.get("threat_score", 0))
+                                self._twilio_alert.send_alert(
+                                    alert_numbers, "LOITERING", f"INCIDENT_{incident_id:03d}",
+                                    threat_score, settings.get("CAMERA_LOCATION", "Main Entrance")
+                                )
+                            
                             self._alert_cooldown[cooldown_key] = time.time()
 
                 if dist < closest_dist:
@@ -577,10 +602,19 @@ class Detector:
                                     tailgate_contribution = 40
                                     p1["threat_score"] = min(100, p1["threat_score"] + tailgate_contribution)
 
-                                    self._trigger_incident(
+                                    incident_id = self._trigger_incident(
                                         frame, "TAILGATING",
                                         {"follower_id": int(p1['id']), "target_id": int(p2['id']), "follow_duration_s": 30},
                                         prox_limit)
+                                    
+                                    if self._twilio_alert:
+                                        alert_numbers = settings.get("ALERT_NUMBERS", [])
+                                        threat_score = int(p1.get("threat_score", 0))
+                                        self._twilio_alert.send_alert(
+                                            alert_numbers, "TAILGATING", f"INCIDENT_{incident_id:03d}",
+                                            threat_score, settings.get("CAMERA_LOCATION", "Main Entrance")
+                                        )
+                                    
                                     self._alert_cooldown[cooldown_key] = time.time()
                         else:
                             if pair_key in self._follow_start:
@@ -640,11 +674,20 @@ class Detector:
                         if dist_to_target < encircle_dist:
                             other["threat_score"] = min(100, other["threat_score"] + encircler_score_contribution)
 
-                    self._trigger_incident(
+                    incident_id = self._trigger_incident(
                         frame, "ENCIRCLEMENT",
                         {"max_gap_deg":  int(min_max_gap),
                          "enclosed_pct": debug_enclosed},
                         prox_limit)
+                    
+                    if self._twilio_alert:
+                        alert_numbers = settings.get("ALERT_NUMBERS", [])
+                        threat_score = int(best_target.get("threat_score", 0))
+                        self._twilio_alert.send_alert(
+                            alert_numbers, "ENCIRCLEMENT", f"INCIDENT_{incident_id:03d}",
+                            threat_score, settings.get("CAMERA_LOCATION", "Main Entrance")
+                        )
+                    
                     self._alert_cooldown["circle"] = time.time()
 
         for p in current_people:
@@ -652,11 +695,20 @@ class Detector:
                 current_alerts.append(p["threat_reason"])
                 ckey = f"posture_{p['id']}"
                 if time.time() - self._alert_cooldown.get(ckey, 0) > 10:
-                    self._trigger_incident(
+                    incident_id = self._trigger_incident(
                         frame, p["threat_reason"],
                         {"threat_score": p["threat_score"],
                          "reason":       p["threat_reason"]},
                         prox_limit)
+                    
+                    if self._twilio_alert:
+                        alert_numbers = settings.get("ALERT_NUMBERS", [])
+                        threat_score = int(p.get("threat_score", 0))
+                        self._twilio_alert.send_alert(
+                            alert_numbers, p["threat_reason"], f"INCIDENT_{incident_id:03d}",
+                            threat_score, settings.get("CAMERA_LOCATION", "Main Entrance")
+                        )
+                    
                     self._alert_cooldown[ckey] = time.time()
                     if p["threat_score"] > 70:
                         pass 
@@ -701,6 +753,9 @@ class Detector:
         Snapshot the circular buffer, open a VideoWriter for this
         incident, and register it in _pending_writers so the main
         loop feeds post-event frames into it.
+        
+        Returns:
+            incident_id: The ID of the created incident
         """
         pre_frames = list(self._video_buffer)
 
@@ -713,6 +768,8 @@ class Detector:
 
         self._detection_log.insert(
             0, f"⚠️ INCIDENT #{incident_id}: {alert_type}")
+
+        return incident_id
 
 
 # ---------------------------------------------------------------------------

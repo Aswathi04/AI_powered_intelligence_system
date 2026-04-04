@@ -14,3 +14,8 @@ evidence/
 
 # Database files
 *.db
+# Sensitive config — contains Twilio credentials and phone numbers
+sentinel_config.json
+
+# Environment variables
+.env

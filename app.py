@@ -262,6 +262,10 @@ def api_config():
         "MIN_ENCIRCLERS":    int(data.get("min_encirclers",     3)),
         "DEMO_MODE":         data.get("demo_mode") == "on",
         "DEMO_VIDEO":        data.get("demo_video", "demo_attack.mp4"),
+        "TWILIO_SID":        data.get("twilio_sid", ""),
+        "TWILIO_TOKEN":      data.get("twilio_token", ""),
+        "TWILIO_FROM":       data.get("twilio_from", ""),
+        **({"ALERT_NUMBERS": [alert_number]} if (alert_number := data.get("alert_number", "").strip()) else {}),
     })
     _save_config(config)
 
@@ -436,6 +440,8 @@ DEFAULT_CONFIG = {
     "CAMERA_LOCATION": "Main Entrance",
     "DEMO_MODE": False,
     "DEMO_VIDEO": "demo_attack.mp4",
+    "TWILIO_SID": "", "TWILIO_TOKEN": "", "TWILIO_FROM": "",
+    "ALERT_NUMBERS": [],
 }
 
 

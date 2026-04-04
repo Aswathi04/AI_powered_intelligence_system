@@ -634,6 +634,31 @@
         </div>
       </div>
 
+      <!-- SMS Alert Settings -->
+      <div class="form-section">
+        <h4>📱 SMS Alert Settings</h4>
+        <p>Configure Twilio credentials to send SMS notifications for detected incidents.</p>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Twilio Account SID</label>
+            <input type="text" name="twilio_sid" value="{{ config.TWILIO_SID }}"/>
+          </div>
+          <div class="form-group">
+            <label>Twilio Auth Token</label>
+            <input type="password" name="twilio_token" value="{{ config.TWILIO_TOKEN }}"/>
+          </div>
+          <div class="form-group">
+            <label>Twilio From Number</label>
+            <input type="text" name="twilio_from" placeholder="+1XXXXXXXXXX" value="{{ config.TWILIO_FROM }}"/>
+          </div>
+          <div class="form-group">
+            <label>Alert Recipient Number</label>
+            <input type="text" name="alert_number" placeholder="+91XXXXXXXXXX" />
+            <span class="form-hint">International format. Verified on Twilio trial accounts only.</span>
+          </div>
+        </div>
+      </div>
+
       <button type="submit" class="btn-primary">💾 Save Configuration</button>
     </form>
   </div>
