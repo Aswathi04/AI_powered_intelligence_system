@@ -1,83 +1,92 @@
- 
-## Sentinel AI: Security Operations Center
+# Sentinel AI: Security Operations Center
 
-Sentinel AI is an advanced, AI-powered intelligence and surveillance system designed to analyze crowd behavior and detect potential physical threats in real-time. Built with a focus on enhancing public safety, the system utilizes state-of-the-art computer vision to monitor video feeds, track individuals, analyze body posture, and alert security personnel to suspicious or dangerous activities via a centralized dashboard.
-
-## ✨ Key Features
-
-* **Real-Time Threat Detection:** Analyzes live camera feeds to detect anomalous behaviors, including:
-    * **Proximity & Stalking:** Flags individuals maintaining unusually close distances to others.
-    * **Encirclement:** Detects when a target is surrounded by multiple individuals based on angle and gap calculations.
-    * **Aggressive Approach (Lunge):** Identifies sudden, aggressive movements towards the camera or others by analyzing bounding box expansion.
-    * **Speed Anomalies:** Tracks sudden, unnatural accelerations in movement.
-    * **Surrender Detection:** Uses pose estimation to detect when a person has their hands raised above their shoulders.
-* **Security Operations Dashboard:** A dedicated Streamlit web interface for security personnel to monitor the live tactical view, view active threats, and audit past incidents.
-* **Automated Incident Reporting:** Automatically captures "Pre-Event", "Peak", and "Post-Event" snapshots when a threat is detected and logs them into structured JSON reports for manual review.
-* **Multi-Object Tracking:** Assigns consistent IDs to individuals across frames to maintain movement history and reduce false alarms (threat smoothing/debouncing).
-
-## 🛠️ Technology Stack
-
-* **UI/Dashboard:** [Streamlit](https://streamlit.io/)
-* **Computer Vision:** [OpenCV](https://opencv.org/)
-* **Object Detection:** [Ultralytics YOLOv11](https://docs.ultralytics.com/) (`yolo11n.pt`)
-* **Object Tracking:** DeepSORT
-* **Pose Estimation:** [Google MediaPipe](https://developers.google.com/mediapipe)
-* **Language:** Python 3.x
-
-## 📂 Project Structure
-
-* `sentinel_dashboard.py`: The primary Streamlit application. Acts as the SOC (Security Operations Center), providing a UI for live camera feeds, live logs, threat metrics, and an incident case file review system.
-* `test_full_system.py`: The core surveillance pipeline. Integrates YOLO detection, DeepSORT tracking, and MediaPipe pose estimation to process frames, apply logic thresholds, and render visual alerts.
-* `logic/threat_scorer.py`: Contains the `ThreatScorer` class which evaluates individual tracking history and body landmarks to assign threat scores (0-100) based on poses (e.g., surrendering) or movements (e.g., lunging).
-* `tracking/deepsort_tracker.py`: *(Module)* Handles the persistence of object IDs across video frames.
-* `pose/mediapipe_estimator.py`: *(Module)* Extracts skeletal landmarks to determine body posture.
-* `evidence/incidents/`: *(Auto-generated)* Directory where the system saves incident reports (`report.json`) and snapshot evidence.
-
-## 🚀 Installation & Setup
-
-1. **Clone the repository:**
-   ```bash
-   git clone <your-repository-url>
-   cd AI_powered_intelligence_system
-
-```
-
-2. **Install the required dependencies:**
-Ensure you have Python installed, then run:
-```bash
-pip install streamlit opencv-python ultralytics mediapipe numpy
-
-```
+Sentinel AI is an AI-driven surveillance system built to monitor video feeds, detect suspicious human behaviors, and capture threat evidence automatically. It combines object detection, tracking, pose estimation, and alerting into a single security operations workflow.
 
 
-*(Note: Ensure you also have the necessary dependencies for DeepSORT if not included in the primary requirements).*
-3. **Download YOLO Weights:**
-Ensure the YOLOv11 nano weights file (`yolo11n.pt`) is present in the root directory. If missing, Ultralytics will typically download it automatically upon the first run.
+## 🔍 Core Capabilities
 
-## 💻 Usage
+- Real-time person detection using YOLO.
+- Persistent multi-object tracking with DeepSORT.
+- Pose estimation via MediaPipe to identify suspicious postures.
+- Threat scoring and classification for events such as proximity, encirclement, speed changes, and aggressive movement.
+- Incident evidence recording into date-based folders under `evidence/incidents/`.
+- Optional Twilio SMS alerts for verified incidents.
+- Flask-based dashboard with user authentication and live stream support.
 
-### 1. Launching the Security Dashboard
+## 📂 Main Project Structure
 
-To open the Sentinel AI Operations Center interface, run the Streamlit app:
+### Root
+- `app.py` — Flask application entry point.
+- `demo_attack.py` — Demo detection script for lunge and proximity testing.
+- `test_full_system.py` — Example pipeline for YOLO detection, tracking, and pose-based scoring.
+- `sentinel_config.json` — Runtime configuration for camera settings, thresholds, Twilio, and demo mode.
+- `yolo11n.pt` — YOLO model weights used for person detection.
+- `requirements.txt` — currently empty; install dependencies manually or populate this file.
+
+### Modules
+- `auth/` — login and role-based access support.
+- `core/` — camera capture and detection pipeline.
+- `logic/` — threat scoring logic and risk assessment.
+- `tracking/` — DeepSORT tracker wrapper.
+- `pose/` — MediaPipe pose estimation.
+- `alerts/` — Twilio SMS alert support.
+- `evidence/` — incident recordings and reports.
+- `templates/` — Flask HTML templates.
+- `static/` — CSS and JavaScript for UI.
+
+## 🧠 How the System Works
+
+1. `app.py` runs the Flask web application, managing authentication, dashboard views, and camera stream delivery.
+2. `core/detector.py` implements the main surveillance logic:
+   - Loads YOLO for person detection.
+   - Uses `tracking/deepsort_tracker.py` to maintain consistent IDs.
+   - Uses `pose/mediapipe_estimator.py` for posture detection.
+   - Uses `logic/threat_scorer.py` to calculate threat scores.
+   - Buffers pre-event frames and writes incident videos post-trigger.
+3. `alerts/twilio_alert.py` handles sending SMS notifications for alerts when configured.
+
+## ⚙️ Dependencies
+
+Install the primary dependencies manually in a Python environment:
 
 ```bash
-streamlit run sentinel_dashboard.py
-
+pip install flask opencv-python ultralytics mediapipe numpy twilio deep_sort_realtime
 ```
 
-* **Live Tactical View:** Toggle "ACTIVATE SURVEILLANCE" in the sidebar to start the webcam feed and begin threat detection.
-* **Incident Review:** Navigate to the "Incident Review & Audit" tab to review captured evidence, confirm threats, or dismiss false alarms.
+> Note: `requirements.txt` is empty in this repository, so dependency installation is currently manual.
 
-### 2. Running the Standalone System (Phase 4 Logic)
+## 🚀 Running the System
 
-To test the core detection and tracking logic (without the web dashboard) directly via an OpenCV window:
+1. Activate your Python virtual environment.
+2. Install the required packages.
+3. Configure `sentinel_config.json` with your camera source, thresholds, and optional Twilio credentials.
+4. Run the Flask app:
 
 ```bash
-python test_full_system.py
-
+python app.py
 ```
 
-*Press `q` to quit the video stream.*
+5. Open the web app at the URL shown in the console.
+
+## 📝 Configuration Notes
+
+`sentinel_config.json` includes:
+- `FRAME_WIDTH`, `FRAME_HEIGHT`, `SKIP_FRAMES`
+- `SPEED_THRESHOLD`, `PROXIMITY_LIMIT`, `ENCIRCLEMENT_DIST`, `MIN_ENCIRCLERS`
+- `CAMERA_PORT`, `CAMERA_LOCATION`
+- `DEMO_MODE`, `DEMO_VIDEO`
+- `TWILIO_SID`, `TWILIO_TOKEN`, `TWILIO_FROM`, `ALERT_NUMBERS`
+
+## 🧪 Useful Scripts
+
+- `python test_full_system.py` — run the core detection and tracking logic in an OpenCV window.
+- `python demo_attack.py` — demo script tuned for lunge and proximity detection.
+- `python test_cam.py`, `python test_pose.py`, `python test_tracking.py` — debugging and component tests.
+
+## 📌 Important Note
+
+Although older documentation mentions Streamlit, the active application in this repository is currently Flask-based with a Flask dashboard and camera streaming support.
+
 
 ## ⚙️ Configuration & Thresholds
 
